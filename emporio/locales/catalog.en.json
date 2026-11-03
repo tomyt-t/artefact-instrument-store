@@ -23,7 +23,7 @@
     "5": {
       "name": "Acoustic guitars",
       "description": "Classical, folk and electro-acoustic guitars",
-      "keywords": "guitar acoustic classical folk"
+      "keywords": "guitar acoustic"
     },
     "6": {
       "name": "Wind instruments (woodwinds)",
@@ -43,7 +43,7 @@
     "9": {
       "name": "Ukuleles",
       "description": "Soprano, concert, tenor and baritone ukuleles",
-      "keywords": "ukulele uke soprano concert tenor baritone"
+      "keywords": "ukulele uke"
     }
   },
   "name_words": {
@@ -189,5 +189,6 @@
     "Pagamento não confirmado dentro do prazo": "Payment not confirmed within the deadline",
     "Pedido cancelado pelo cliente antes do processamento": "Order cancelled by the customer before processing"
   },
-  "strings_word": "strings"
+  "strings_word": "strings",
+  "classical_word": "classical"
 }

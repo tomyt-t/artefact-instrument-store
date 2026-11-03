@@ -23,7 +23,7 @@
     "5": {
       "name": "Guitares acoustiques",
       "description": "Guitares classiques, folk et électro-acoustiques",
-      "keywords": "guitare acoustique classique folk"
+      "keywords": "guitare acoustique"
     },
     "6": {
       "name": "Instruments à vent (bois)",
@@ -43,7 +43,7 @@
     "9": {
       "name": "Ukulélés",
       "description": "Ukulélés soprano, concert, ténor et baryton",
-      "keywords": "ukulélé ukulele uke soprano concert ténor tenor baryton"
+      "keywords": "ukulélé ukulele uke"
     }
   },
   "name_words": {
@@ -189,5 +189,6 @@
     "Pagamento não confirmado dentro do prazo": "Paiement non confirmé dans le délai imparti",
     "Pedido cancelado pelo cliente antes do processamento": "Commande annulée par le client avant son traitement"
   },
-  "strings_word": "cordes"
+  "strings_word": "cordes",
+  "classical_word": "classique"
 }

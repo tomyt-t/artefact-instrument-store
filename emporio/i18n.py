@@ -95,4 +95,6 @@ def translated_words(product, category_id: int) -> str:
                 words += [translator.spec_value(value) for key, value in product.specs.items() if key != 'electronics']
                 if product.specs.get('strings') in ('steel', 'nylon'):
                     words.append(_catalog(language)['strings_word'])
+                if category_id == 5 and product.specs.get('strings') == 'nylon':  # a nylon ukulele is not 'classical'
+                    words.append(_catalog(language)['classical_word'])
     return ' '.join(words)

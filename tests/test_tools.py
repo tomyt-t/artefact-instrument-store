@@ -398,3 +398,19 @@ def test_the_model_chooses_categories_in_the_page_language(store, guard):
     for name in ('Guitars', 'Violões', 'Guitares'):
         assert english.call('buscar_produtos', {'categoria': name, 'preco_maximo': 1000}).data['encontrados'] == 12
     assert english.call('buscar_produtos', {'categoria': 'Electric guitars'}).data['encontrados'] == 5
+
+
+def test_a_brand_beyond_the_chosen_category_is_still_found(store, guard):
+    english = Toolbox(store, AgentContext('s', now=NOW, language='en'), guard)
+    result = english.call('buscar_produtos', {'categoria': 'Guitars', 'consulta': 'Fender'})
+    assert {product['id'] for product in result.data['produtos']} == {134, 145}
+    assert 'outras_categorias' in result.data and 'aviso' not in result.data
+    assert result.events[0].product_ids == (134, 145)
+    telecaster = english.call('buscar_produtos', {'categoria': 'Guitars', 'consulta': 'Telecaster', 'preco_maximo': 6000})
+    assert telecaster.data['encontrados'] == 1
+    # 'guitars' alone still means violões, and something sold out in the category is the answer, not another category
+    assert english.call('buscar_produtos', {'categoria': 'Guitars', 'preco_maximo': 1000}).data['encontrados'] == 12
+    sold_out = english.call('buscar_produtos', {'categoria': 'Guitars', 'consulta': 'GF-3D'}).data
+    assert 'indisponiveis' in sold_out and 'outras_categorias' not in sold_out
+    nothing = english.call('buscar_produtos', {'categoria': 'Guitars', 'consulta': 'trompete'}).data
+    assert nothing['encontrados'] == 0 and 'outras_categorias' not in nothing

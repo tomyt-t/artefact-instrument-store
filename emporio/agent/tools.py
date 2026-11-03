@@ -143,10 +143,20 @@ class Toolbox:
             return [p for p in products if p.promotion] if on_sale else products
 
         found = matching(only_available=only_available)
+        elsewhere = ''
+        if query and category and not found and not matching(only_available=False):
+            asked, category = category, None  # 'Fender' under Guitars, which here means Violões: the brand says more
+            found = matching(only_available=only_available)
+            if found:
+                elsewhere = f'Nada em {asked.name} com "{query}". Estes são de outras categorias: diga isso ao cliente.'
+            else:
+                category = asked
         if ordem in ('menor_preco', 'maior_preco'):
             found.sort(key=lambda p: p.price, reverse=ordem == 'maior_preco')
         data: dict = {'encontrados': len(found),
                       'produtos': [views.product_summary(p, self.store) for p in found[:MAX_LISTED]]}
+        if elsewhere:
+            data['outras_categorias'] = elsewhere
         if 0 < len(found) <= 3:  # 'and in 5x?' usually comes with the price, in the same message
             for view, product in zip(data['produtos'], found, strict=True):
                 view['parcelas_disponiveis'] = views.installment_options(product.price)
