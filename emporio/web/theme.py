@@ -20,7 +20,12 @@ FONTS = ('<link rel="preconnect" href="https://fonts.googleapis.com">'
 CSS = '''
 body { font-family: 'Inter', system-ui, sans-serif; color: #2b211c; }
 .font-display { font-family: 'Fraunces', Georgia, serif; letter-spacing: -0.01em; }
+.product-card { transition: transform .18s ease, box-shadow .18s ease; }
+.product-card:hover { transform: translateY(-3px); box-shadow: 0 14px 30px -12px rgba(43, 33, 28, .28); }
+.product-photo img { filter: drop-shadow(0 10px 12px rgba(43, 33, 28, .22)); transition: transform .25s ease; }
+.product-card:hover .product-photo img { transform: scale(1.04); }
 .hero-photo { filter: drop-shadow(0 22px 22px rgba(43, 33, 28, .3)); }
+.line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 '''
 
 

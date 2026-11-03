@@ -57,7 +57,7 @@ def language_selector(t: Translator) -> None:
 
 
 class SiteHeader:
-    def __init__(self, t: Translator) -> None:
+    def __init__(self, t: Translator, *, on_search: Callable[[str], None]) -> None:
         with ui.header().classes('bg-cream text-ink p-0 gap-0 border-b border-[#ece2d4]'):
             with ui.row().classes('w-full justify-center gap-6 bg-secondary text-white text-xs py-1.5 px-4 no-wrap'):
                 ui.label(t('header.pix_off', percent=f'{policies.PIX_DISCOUNT:.0%}')).classes('max-sm:hidden')
@@ -70,6 +70,11 @@ class SiteHeader:
                     with ui.column().classes('gap-0 max-sm:hidden'):
                         ui.label(STORE.name).classes('font-display text-2xl leading-none')
                         ui.label(t('store.slogan')).classes('text-xs text-muted')
+                with ui.input(placeholder=t('header.search'), on_change=lambda e: on_search(e.value)) \
+                        .props('outlined rounded dense clearable debounce=300 bg-color=white') \
+                        .classes('grow max-w-xl mx-auto') as search:
+                    with search.add_slot('prepend'):
+                        ui.icon('search', color='grey-7')
                 is_open, status = store_status(t)
                 with ui.row().classes('items-center gap-2 text-sm max-lg:hidden'):
                     ui.element('span').classes('w-2.5 h-2.5 rounded-full') \
