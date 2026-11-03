@@ -5,7 +5,9 @@ description = "Customer-service agent for the Empório da Música music store, w
 requires-python = ">=3.11"
 dependencies = [
     "nicegui>=3.18,<4",
+    "openai>=3.42.0",
     "pypdfium2>=5.14.0",
+    "python-dotenv>=1.2.4",
     "tzdata>=2026.6",
 ]
 

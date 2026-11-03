@@ -26,7 +26,7 @@ STATIC_DIR = Path(__file__).resolve().parent / 'static'
 
 @lru_cache(maxsize=1)
 def _agent() -> Agent:
-    """One per process."""
+    """One per process: it counts the failed order lookups of every visitor. With no API key it explains the setup."""
     return create_agent()
 
 
