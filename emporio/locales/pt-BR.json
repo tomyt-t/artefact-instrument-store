@@ -13,6 +13,7 @@
   "chat.starter.3": "Qual o endereço da loja?",
   "chat.starter.4": "Me arrependi da compra, posso devolver?",
   "agent.busy": "Estou com muitas conversas ao mesmo tempo agora 😅 Tenta de novo mais tarde ou fale com a nossa equipe pelo {phone}.",
+  "agent.cart_changed": "Seu carrinho já foi atualizado, não precisa pedir isso de novo.",
   "agent.no_answer": "Desculpa, me enrolei aqui. Pode repetir a pergunta de outro jeito?",
   "agent.on_sale": "em promoção",
   "agent.products": "Produtos",

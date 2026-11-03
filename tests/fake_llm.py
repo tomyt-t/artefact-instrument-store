@@ -2,6 +2,7 @@
 import copy
 from types import SimpleNamespace
 
+import httpx2
 from openai.types.chat import ChatCompletionChunk
 
 from emporio.agent.config import LLMConfig
@@ -22,6 +23,12 @@ def chunk(content=None, tool_calls=None):
 def call(id_, name, arguments, index=0, **extra):
     part = {'index': index, 'type': 'function', 'function': {'name': name, 'arguments': arguments}, **extra}
     return part | {'id': id_} if id_ else part
+
+
+def http_error(cls, status, retry_after='0', body=None):
+    response = httpx2.Response(status, headers={'retry-after': retry_after} if retry_after else {},
+                               request=httpx2.Request('POST', 'https://example.test'))
+    return cls('erro', response=response, body=body)
 
 
 class FakeCompletions:

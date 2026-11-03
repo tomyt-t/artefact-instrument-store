@@ -13,6 +13,7 @@
   "chat.starter.3": "What is the store's address?",
   "chat.starter.4": "I regret my purchase, can I return it?",
   "agent.busy": "I'm handling too many conversations at once right now 😅 Try again later or talk to our team at {phone}.",
+  "agent.cart_changed": "Your cart has already been updated, no need to ask again.",
   "agent.no_answer": "Sorry, I got muddled there. Could you ask that another way?",
   "agent.on_sale": "on sale",
   "agent.products": "Products",
