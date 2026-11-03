@@ -5,12 +5,13 @@ repeat values, never calculate them.
 """
 from __future__ import annotations
 
+from datetime import date
 
 from .. import policies
 from ..cart import Cart
-from ..data import Category, Product, StoreData
+from ..data import Category, Order, Product, StoreData
 from ..i18n import Translator
-from ..format import brl
+from ..format import br_date, brl
 
 SPEC_NAMES = {
     'top': 'tampo', 'back_sides': 'fundo e laterais', 'neck': 'braço', 'strings': 'cordas', 'scale': 'escala',
@@ -27,6 +28,9 @@ AVAILABILITY_NOTES = {
     'Em breve': 'Ainda não chegou à loja e não tem data prevista.',
 }
 QUOTE_WITH_TEAM = f'A cotação é individual, com a equipe pelo {policies.STORE.phone} (5.2).'
+STALE_AFTER_DAYS = 15  # an order waiting longer than this without shipping is treated as a problem
+TREAT_AS_COMPLAINT = (f'Pedimos desculpas pela demora. Para resolver, fale com a equipe pelo {policies.STORE.phone}: o retorno '
+                      'é em até 24 horas úteis (7.3). Quem avalia cancelamento e reembolso é a equipe.')
 OTHER_CITIES = ('Fora da região de Campo Grande o frete é calculado pelo CEP: PAC de 5 a 12 dias úteis, SEDEX de 2 a 5 '
                 f'e Jadlog de 3 a 8. A vitrine não calcula esse valor: quem informa é a equipe, pelo {policies.STORE.phone}. '
                 'O manual não lista as cidades da região: numa cidade vizinha, a equipe confirma se o frete de Campo '
@@ -124,4 +128,33 @@ def cart_view(cart: Cart) -> dict:
         view['frete_especial'] = f'Há bateria acústica no carrinho: pode exigir frete especial. {QUOTE_WITH_TEAM}'
     view['pagamento_combinado'] = ('permitido (ex.: PIX + cartão)' if policies.can_split_payment(cart.total)
                                    else f'só em compras acima de {brl(policies.SPLIT_PAYMENT_ABOVE)}')
+    return view
+
+
+def order_view(order: Order, store: StoreData, today: date) -> dict:
+    """The order as recorded: totals are never recalculated with today's prices or rules."""
+    view = {
+        'pedido': order.id,
+        'cliente': store.customers[order.customer_id].first_name,
+        'feito_em': br_date(order.order_date),
+        'situacao': order.status_label,
+        'itens': [{'id': product_id, 'nome': store.products[product_id].name, 'quantidade': quantity}
+                  for product_id, quantity in order.items],
+        'total_registrado': brl(order.total),
+        'pagamento': order.payment_label,
+    }
+    if order.tracking_code:
+        view['codigo_de_rastreio'] = order.tracking_code
+    if order.estimated_delivery:
+        view['previsao_de_entrega'] = br_date(order.estimated_delivery)  # the CSV has no actual delivery date
+    if order.status in ('pending', 'confirmed', 'shipped'):
+        waiting = (today - order.order_date).days  # the CSV has no status history
+        if late := policies.delivery_days_late(order.estimated_delivery, today):
+            view['atraso'] = f'{late} dias depois da previsão de entrega, que era {br_date(order.estimated_delivery)}'
+        elif order.status != 'shipped':
+            view['dias_desde_o_pedido'] = waiting
+        if late or (order.status != 'shipped' and waiting > STALE_AFTER_DAYS):
+            view['o_que_fazer'] = TREAT_AS_COMPLAINT
+    if order.notes:
+        view['observacoes'] = order.notes
     return view

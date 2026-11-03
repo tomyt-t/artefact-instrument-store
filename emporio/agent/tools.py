@@ -10,8 +10,10 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date, datetime
 
 from .. import policies
 from ..cart import Cart
@@ -20,11 +22,12 @@ from ..format import brl
 from ..i18n import LANGUAGES, Translator
 from . import views
 from .base import AgentContext
-from .events import AddToCart, OpenCart, OpenProduct, RemoveFromCart, ShowProducts, UIAction
+from .events import AddToCart, OpenCart, OpenProduct, RemoveFromCart, ShowOrder, ShowProducts, UIAction
 
 log = logging.getLogger(__name__)
 
 MAX_LISTED = 15  # products described to the model per search; the storefront highlights all of them
+MAX_FAILED_LOOKUPS = 5  # wrong order number/e-mail pairs per session before order lookups are blocked
 MAX_ARGUMENT_CHARS = 2000  # legitimate calls are far shorter; a huge one could hang the parsers
 ACCESSORIES = frozenset({
     'corda', 'cordas', 'encordoamento', 'encordoamentos', 'palheta', 'palhetas', 'cabo', 'cabos', 'case', 'cases',
@@ -36,6 +39,9 @@ ACCESSORIES = frozenset({
     'corde', 'cordes', 'mediator', 'mediators', 'ampli', 'amplis', 'amplificateur', 'amplificateurs', 'accordeur',
     'accordeurs', 'etui', 'etuis', 'housse', 'housses', 'baguette', 'baguettes', 'sangle', 'sangles'})
 NOT_IN_CATALOG = 'Esse produto não está no catálogo. Cite só os produtos que vieram aqui, nunca outra marca ou modelo.'
+ORDER_NOT_FOUND = 'Não encontrei pedido com esse número e e-mail. Confira os dois dados com o cliente.'
+ORDER_BLOCKED = (f'Consulta de pedidos bloqueada para este cliente depois de {MAX_FAILED_LOOKUPS} tentativas sem '
+                 f'sucesso. Ele pode falar com a equipe pelo {policies.STORE.phone}.')
 
 
 class ToolError(Exception):
@@ -57,6 +63,13 @@ class Tool:
     run: Callable[..., ToolResult]
 
 
+class OrderGuard:
+    """Failed order lookups per session, kept across turns: guessing order numbers gets blocked."""
+
+    def __init__(self) -> None:
+        self.failures: defaultdict[str, int] = defaultdict(int)
+
+
 class Toolbox:
     """The tools for one turn of one conversation.
 
@@ -64,14 +77,21 @@ class Toolbox:
     2 unidades') before it writes the answer; the interface then applies the same change to the real cart.
     """
 
-    def __init__(self, store: StoreData, context: AgentContext) -> None:
+    def __init__(self, store: StoreData, context: AgentContext, guard: OrderGuard) -> None:
         self.store = store
         self.context = context
         self.t = Translator(context.language)  # what the customer reads directly
+        self.guard = guard
+        now = context.now or datetime.now(policies.TIMEZONE)
+        self.now = now.astimezone(policies.TIMEZONE) if now.tzinfo else now.replace(tzinfo=policies.TIMEZONE)
         self.cart = Cart(store, {str(item['product_id']): item['quantity'] for item in context.cart.get('items', [])})
         # products the model has really looked at this turn: history is text only, so an id from memory may be a guess
         self.seen_ids = {line.product.id for line in self.cart.lines} | {context.viewing_product_id}
         self.tools = {tool.name: tool for tool in self._tools()}
+
+    @property
+    def today(self) -> date:
+        return self.now.date()
 
     def schemas(self) -> list[dict]:
         """The tools in the OpenAI function-calling format."""
@@ -219,6 +239,24 @@ class Toolbox:
         return ToolResult({'removido': product.name, 'carrinho': views.cart_view(self.cart)},
                           (RemoveFromCart(product.id),))
 
+    # --- orders --------------------------------------------------------------------------------------------------
+
+    def lookup_order(self, numero_pedido: int, email: str = '') -> ToolResult:
+        order_id = _integer(numero_pedido, 'numero_pedido')
+        if order_id not in self.context.verified_orders:
+            if self.guard.failures[self.context.session_id] >= MAX_FAILED_LOOKUPS:
+                raise ToolError(ORDER_BLOCKED)
+            if not email:
+                raise ToolError('Peça ao cliente o e-mail usado na compra: sem ele o pedido não pode ser consultado '
+                                '(privacidade, seção 9).')
+            if self.store.find_order(order_id, _text(email, 'email')) is None:
+                self.guard.failures[self.context.session_id] += 1
+                raise ToolError(ORDER_NOT_FOUND)
+            self.context.verified_orders.add(order_id)
+        order = self.store.orders[order_id]
+        return ToolResult(views.order_view(order, self.store, self.today), (ShowOrder(order.id),),
+                          (self.t('suggestion.exchange'), self.t('suggestion.team')))
+
     # --- argument checks -----------------------------------------------------------------------------------------
 
     def _product(self, value: object) -> Product:
@@ -272,6 +310,12 @@ class Toolbox:
             Tool('remover_do_carrinho',
                  'Tira um produto (todas as unidades) do carrinho do cliente. Use só quando o cliente pedir.',
                  _object({'produto_id': {'type': 'integer'}}, required=['produto_id']), self.remove_from_cart),
+            Tool('consultar_pedido',
+                 'Situação, itens, total, pagamento, rastreio e atraso de um pedido, que também abre na tela. Exige o '
+                 'número do pedido e o e-mail usado na compra (privacidade, seção 9): peça os dois ao cliente e nunca '
+                 'tente adivinhar. Um pedido já consultado nesta conversa dispensa o e-mail.',
+                 _object({'numero_pedido': {'type': 'integer'}, 'email': {'type': 'string'}},
+                         required=['numero_pedido']), self.lookup_order),
         ]
 
 

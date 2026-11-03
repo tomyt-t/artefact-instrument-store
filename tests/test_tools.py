@@ -5,20 +5,26 @@ from datetime import datetime
 import pytest
 
 from emporio.agent.base import AgentContext
-from emporio.agent.events import AddToCart, OpenCart, OpenProduct, RemoveFromCart, ShowProducts
-from emporio.agent.tools import MAX_LISTED, Toolbox
+from emporio.agent.events import AddToCart, OpenCart, OpenProduct, RemoveFromCart, ShowOrder, ShowProducts
+from emporio.agent.tools import MAX_FAILED_LOOKUPS, MAX_LISTED, ORDER_NOT_FOUND, OrderGuard, Toolbox
 from emporio.cart import Cart
 from emporio.policies import TIMEZONE
 
 NOW = datetime(2026, 10, 31, 12, 0, tzinfo=TIMEZONE)  # Saturday, open until 13h; Monday 02/11 is Finados
+ANA = 'anacarol.ferreira@coldmail.com'  # order 8: shipped, 245 days past the estimated delivery
 
 
 @pytest.fixture
-def make(store):
+def guard():
+    return OrderGuard()
+
+
+@pytest.fixture
+def make(store, guard):
     def make(*, cart=None, now=NOW, verified=(), session='s1', viewing=None, seen=None):
         context = AgentContext(session_id=session, cart=cart or {}, now=now, verified_orders=set(verified),
                                viewing_product_id=viewing)
-        toolbox = Toolbox(store, context)
+        toolbox = Toolbox(store, context, guard)
         toolbox.seen_ids.update(store.products if seen is None else seen)  # by default, as if the model had searched
         return toolbox
     return make
@@ -36,7 +42,8 @@ def ids(products):
 def test_schemas_are_valid_function_declarations(tools):
     schemas = tools.schemas()
     assert [s['function']['name'] for s in schemas] == [
-        'buscar_produtos', 'ver_produto', 'ver_carrinho', 'adicionar_ao_carrinho', 'remover_do_carrinho']
+        'buscar_produtos', 'ver_produto', 'ver_carrinho', 'adicionar_ao_carrinho', 'remover_do_carrinho',
+        'consultar_pedido']
     for schema in schemas:
         parameters = schema['function']['parameters']
         assert parameters['type'] == 'object'
@@ -278,6 +285,52 @@ def test_remove_and_view_cart(make):
     assert 'não está no carrinho' in tools.call('remover_do_carrinho', {'produto_id': 81}).data['erro']
 
 
+# --- orders --------------------------------------------------------------------------------------------------------
+
+def test_order_needs_number_and_email(make):
+    tools = make()
+    asked = tools.call('consultar_pedido', {'numero_pedido': 8})
+    assert 'e-mail' in asked.data['erro'] and asked.events == ()
+    for email in ('pedro.oliveira@jmail.com', 'anacarol.ferreira@coldmail'):
+        wrong = tools.call('consultar_pedido', {'numero_pedido': 8, 'email': email})
+        assert wrong.data == {'erro': ORDER_NOT_FOUND} and wrong.events == ()
+    assert tools.call('consultar_pedido', {'numero_pedido': 999, 'email': ANA}).data == {'erro': ORDER_NOT_FOUND}
+    assert tools.context.verified_orders == set()
+
+
+def test_verified_order_is_shown_as_recorded(make):
+    tools = make()
+    found = tools.call('consultar_pedido', {'numero_pedido': '#8', 'email': ' AnaCarol.Ferreira@Coldmail.com '})
+    assert found.events == (ShowOrder(8),) and tools.context.verified_orders == {8}
+    assert found.data == {
+        'pedido': 8, 'cliente': 'Ana', 'feito_em': '15/02/2026', 'situacao': 'Enviado',
+        'itens': [{'id': 120, 'nome': 'Kala KA-C Concert Mogno', 'quantidade': 1}], 'total_registrado': 'R$ 349,90',
+        'pagamento': 'Cartão de débito', 'codigo_de_rastreio': 'BRJL5544332BR', 'previsao_de_entrega': '28/02/2026',
+        'atraso': '245 dias depois da previsão de entrega, que era 28/02/2026',
+        'o_que_fazer': 'Pedimos desculpas pela demora. Para resolver, fale com a equipe pelo (67) 3341-4444: o retorno é '
+                       'em até 24 horas úteis (7.3). Quem avalia cancelamento e reembolso é a equipe.'}
+    assert tools.call('consultar_pedido', {'numero_pedido': 8}).events == (ShowOrder(8),)  # no e-mail needed again
+
+
+def test_stale_and_cancelled_orders(make):
+    tools = make(verified=(10, 13, 19))
+    stale = tools.call('consultar_pedido', {'numero_pedido': 13}).data
+    assert stale['dias_desde_o_pedido'] == 233 and '24 horas úteis' in stale['o_que_fazer']
+    assert tools.call('consultar_pedido', {'numero_pedido': 10}).data['total_registrado'] == 'R$ 8.732,00'
+    assert tools.call('consultar_pedido', {'numero_pedido': 19}).data['observacoes'] == (
+        'Pagamento não confirmado dentro do prazo')
+
+
+def test_order_lookup_is_blocked_after_repeated_failures(make):
+    tools = make()
+    for attempt in range(MAX_FAILED_LOOKUPS):
+        failed = tools.call('consultar_pedido', {'numero_pedido': attempt + 1, 'email': 'x@y.z'})
+        assert failed.data == {'erro': ORDER_NOT_FOUND}  # the limit-th failure is still an ordinary one
+    blocked = tools.call('consultar_pedido', {'numero_pedido': 8, 'email': ANA})
+    assert 'bloqueada' in blocked.data['erro'] and blocked.events == ()
+    assert make(session='s2').call('consultar_pedido', {'numero_pedido': 8, 'email': ANA}).events == (ShowOrder(8),)
+
+
 # --- robustness ----------------------------------------------------------------------------------------------------
 
 def test_malformed_calls_come_back_as_errors(tools):
@@ -292,6 +345,16 @@ def test_huge_or_deeply_nested_arguments_are_refused_fast(tools):
     assert 'longos' in tools.call('ver_produto', '{"produto_id": "' + ' ' * 40000 + 'x"}').data['erro']
     assert 'longos' in tools.call('ver_produto', '[' * 200000).data['erro']
     assert 'JSON' in tools.call('ver_produto', '[' * 1999).data['erro']
+
+
+def test_a_tool_failure_is_logged_without_the_customers_data(tools, monkeypatch, caplog):
+    def broken(*_args):
+        raise RuntimeError('boom')
+    monkeypatch.setattr('emporio.agent.tools.views.order_view', broken)
+    result = tools.call('consultar_pedido', {'numero_pedido': 8, 'email': ANA})
+    assert 'Falha interna' in result.data['erro']
+    assert 'consultar_pedido' in caplog.text and ANA not in caplog.text
+    caplog.clear()
 
 
 def test_infinity_is_not_a_price(tools):
@@ -328,8 +391,8 @@ def test_accessories_are_understood_in_english_and_french(make):
     assert 'escopo' not in make().call('buscar_produtos', {'consulta': '7 strings'}).data
 
 
-def test_the_model_chooses_categories_in_the_page_language(store):
-    english = Toolbox(store, AgentContext('s', now=NOW, language='en'))
+def test_the_model_chooses_categories_in_the_page_language(store, guard):
+    english = Toolbox(store, AgentContext('s', now=NOW, language='en'), guard)
     choices = english.schemas()[0]['function']['parameters']['properties']['categoria']['enum']
     assert 'Guitars' in choices and 'Electric guitars' in choices and 'Guitarras' not in choices
     for name in ('Guitars', 'Violões', 'Guitares'):
