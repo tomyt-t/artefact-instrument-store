@@ -7,6 +7,7 @@ from __future__ import annotations
 
 
 from .. import policies
+from ..cart import Cart
 from ..data import Category, Product, StoreData
 from ..i18n import Translator
 from ..format import brl
@@ -92,4 +93,35 @@ def product_details(product: Product, store: StoreData) -> dict:
         view['frete_especial'] = f'Instrumento de grande porte: pode exigir frete especial. {QUOTE_WITH_TEAM}'
     if product.details_verified:
         view['descricao'] = product.description
+    return view
+
+
+def cart_view(cart: Cart) -> dict:
+    if not cart.lines:
+        return {'itens': [], 'total': brl(0)}
+    items = []
+    for line in cart.lines:
+        item = {'id': line.product.id, 'nome': line.product.name, 'quantidade': line.quantity,
+                'preco_unitario': brl(line.product.price)}
+        if promotion := line.product.promotion:  # the original price and the discount always go along (6.2)
+            item['preco_original'] = brl(line.product.list_price)
+            item['promocao'] = f'{promotion.description}: {promotion.discount_percent}% de desconto'
+        items.append(item | {'subtotal': brl(line.total)})
+    view = {'itens': items, 'total': brl(cart.total)}
+    if cart.promo_savings:
+        view['economia_em_promocoes'] = brl(cart.promo_savings)
+    view['total_no_pix'] = brl(cart.pix_total)
+    view['parcelas'] = installments(cart.total)
+    view['parcelas_disponiveis'] = installment_options(cart.total)
+    fee = policies.local_shipping_fee(cart.total)
+    view['frete_em_campo_grande'] = 'grátis' if fee == 0 else (
+        f'{brl(fee)} (frete grátis acima de {brl(policies.FREE_SHIPPING_ABOVE)})')
+    if fee:  # the sum the model would do by itself, showing only the result
+        view['com_frete_em_campo_grande'] = (f'no PIX, {brl(cart.pix_total)} + {brl(fee)} de frete = {brl(cart.pix_total + fee)}; '
+                                             f'no cartão, {brl(cart.total)} + {brl(fee)} de frete = {brl(cart.total + fee)}')
+    view['frete_outras_cidades'] = OTHER_CITIES
+    if cart.needs_freight_quote:
+        view['frete_especial'] = f'Há bateria acústica no carrinho: pode exigir frete especial. {QUOTE_WITH_TEAM}'
+    view['pagamento_combinado'] = ('permitido (ex.: PIX + cartão)' if policies.can_split_payment(cart.total)
+                                   else f'só em compras acima de {brl(policies.SPLIT_PAYMENT_ABOVE)}')
     return view

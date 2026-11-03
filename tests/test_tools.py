@@ -5,8 +5,9 @@ from datetime import datetime
 import pytest
 
 from emporio.agent.base import AgentContext
-from emporio.agent.events import OpenProduct, ShowProducts
-from emporio.agent.tools import Toolbox
+from emporio.agent.events import AddToCart, OpenCart, OpenProduct, RemoveFromCart, ShowProducts
+from emporio.agent.tools import MAX_LISTED, Toolbox
+from emporio.cart import Cart
 from emporio.policies import TIMEZONE
 
 NOW = datetime(2026, 10, 31, 12, 0, tzinfo=TIMEZONE)  # Saturday, open until 13h; Monday 02/11 is Finados
@@ -14,10 +15,11 @@ NOW = datetime(2026, 10, 31, 12, 0, tzinfo=TIMEZONE)  # Saturday, open until 13h
 
 @pytest.fixture
 def make(store):
-    def make(*, cart=None, now=NOW, verified=(), session='s1', viewing=None):
+    def make(*, cart=None, now=NOW, verified=(), session='s1', viewing=None, seen=None):
         context = AgentContext(session_id=session, cart=cart or {}, now=now, verified_orders=set(verified),
                                viewing_product_id=viewing)
         toolbox = Toolbox(store, context)
+        toolbox.seen_ids.update(store.products if seen is None else seen)  # by default, as if the model had searched
         return toolbox
     return make
 
@@ -34,7 +36,7 @@ def ids(products):
 def test_schemas_are_valid_function_declarations(tools):
     schemas = tools.schemas()
     assert [s['function']['name'] for s in schemas] == [
-        'buscar_produtos', 'ver_produto']
+        'buscar_produtos', 'ver_produto', 'ver_carrinho', 'adicionar_ao_carrinho', 'remover_do_carrinho']
     for schema in schemas:
         parameters = schema['function']['parameters']
         assert parameters['type'] == 'object'
@@ -174,11 +176,106 @@ def test_conflicting_descriptions_are_withheld(tools):
     assert 'confirmados com a equipe' in music_man['aviso']
 
 
+# --- cart ----------------------------------------------------------------------------------------------------------
+
+def test_add_checks_stock_against_the_customers_cart(make):
+    tools = make(cart={'items': [{'product_id': 93, 'quantity': 2}]})
+    assert tools.call('adicionar_ao_carrinho', {'produto_id': 93}).data == {
+        'erro': 'Nada foi adicionado. Só temos 2 unidade(s) de Martin D-28 Dreadnought Natural em estoque. O cliente já tem todas as 2 no '
+                'carrinho.'}
+    assert 'já tem 2 no carrinho; cabem mais 10' in make(cart={'items': [{'product_id': 81, 'quantity': 2}]}).call(
+        'adicionar_ao_carrinho', {'produto_id': 81, 'quantidade': 11}).data['erro']
+    added = tools.call('adicionar_ao_carrinho', {'produto_id': 108})  # the last unit
+    assert added.events == (AddToCart(108, 1),)
+    assert added.data['carrinho']['total'] == 'R$ 34.998,00'
+    second = tools.call('adicionar_ao_carrinho', {'produto_id': 108})
+    assert 'Só temos 1 unidade(s)' in second.data['erro'] and second.events == ()
+
+
+def test_add_refuses_an_id_the_model_did_not_look_up_this_turn(make):
+    # the history has no ids: asked for a Yamaha C40, a model once added a guessed id, which was a Giannini
+    guessed = make(seen=()).call('adicionar_ao_carrinho', {'produto_id': 101})
+    assert 'buscar_produtos' in guessed.data['erro'] and guessed.events == ()
+    searched = make(seen=())
+    assert ids(searched.call('buscar_produtos', {'consulta': 'Yamaha C40'}).data['produtos']) == [81]
+    assert searched.call('adicionar_ao_carrinho', {'produto_id': 81}).events == (AddToCart(81, 1),)
+    opened = make(seen=())
+    opened.call('ver_produto', {'produto_id': 95})
+    assert opened.call('adicionar_ao_carrinho', {'produto_id': 95}).events == (AddToCart(95, 1),)
+    alternative = make(seen=())
+    alternative.call('ver_produto', {'produto_id': 96})
+    assert alternative.call('adicionar_ao_carrinho', {'produto_id': 91}).events == (AddToCart(91, 1),)
+    assert make(seen=(), viewing=108).call('adicionar_ao_carrinho', {'produto_id': 108}).events == (AddToCart(108, 1),)
+    in_cart = make(seen=(), cart={'items': [{'product_id': 81, 'quantity': 1}]})
+    assert in_cart.call('adicionar_ao_carrinho', {'produto_id': 81}).events == (AddToCart(81, 1),)
+
+
+def test_an_unseen_id_says_nothing_was_added_and_which_product_it_is(make):
+    tools = make(seen=())
+    first = tools.call('adicionar_ao_carrinho', {'produto_id': 113})
+    assert first.events == () and first.data['erro'].startswith('Nada foi adicionado')
+    assert 'Shelby SN-7C' in first.data['erro'] and 'fora de linha' in first.data['erro'].lower()
+    assert tools.call('adicionar_ao_carrinho', {'produto_id': 113}).events == ()  # still discontinued on the second try
+    available = make(seen=())
+    assert available.call('adicionar_ao_carrinho', {'produto_id': 81}).events == ()
+    assert available.call('adicionar_ao_carrinho', {'produto_id': 81}).events == (AddToCart(81, 1),)
+
+
+def test_only_listed_products_count_as_looked_up(make):
+    tools = make(seen=())
+    result = tools.call('buscar_produtos', {'preco_maximo': 1000000})
+    listed = ids(result.data['produtos'])
+    assert len(listed) == MAX_LISTED and tools.call('adicionar_ao_carrinho', {'produto_id': listed[0]}).events
+    highlighted_only = result.events[0].product_ids[MAX_LISTED]
+    assert 'buscar_produtos' in tools.call('adicionar_ao_carrinho', {'produto_id': highlighted_only}).data['erro']
+    sold_out = make(seen=())
+    sold_out.call('buscar_produtos', {'consulta': 'SN-7C'})
+    assert 'fora de linha' in sold_out.call('adicionar_ao_carrinho', {'produto_id': 113}).data['erro']
+
+
 def test_the_note_about_highlighted_products_is_true(tools):
     highlighted = tools.call('buscar_produtos', {'categoria': 'Violões'}).data['observacao']
     assert highlighted == 'Só os 15 primeiros estão listados. A vitrine destaca os 33.'
     assert tools.call('buscar_produtos', {'consulta': 'cordas'}).data['observacao'] == (
         'Só os 15 primeiros estão listados.')  # nothing lights up for a search for strings
+
+
+@pytest.mark.parametrize('quantity', [0, -1, 1.5, 'dois'])
+def test_add_refuses_bad_quantities(tools, quantity):
+    result = tools.call('adicionar_ao_carrinho', {'produto_id': 81, 'quantidade': quantity})
+    assert 'erro' in result.data and result.events == ()
+
+
+def test_add_refuses_unavailable_products(tools):
+    result = tools.call('adicionar_ao_carrinho', {'produto_id': 113})
+    assert result.data == {'erro': 'Nada foi adicionado. Shelby SN-7C 7 Cordas Nylon Natural está indisponível (fora de linha).'}
+
+
+def test_cart_rejects_ids_and_quantities_that_are_not_integers(store):
+    storage = {}
+    cart = Cart(store, storage)
+    assert cart.add(81.0) == cart.add(True) == 'Produto não encontrado.'
+    assert cart.add(81, 0) == cart.add(81, -2) == cart.add(81, 1.0) == (
+        'A quantidade precisa ser um número inteiro de pelo menos 1.')
+    assert storage == {}
+
+
+def test_remove_and_view_cart(make):
+    tools = make(cart={'items': [{'product_id': 121, 'quantity': 1}, {'product_id': 81, 'quantity': 1}]})
+    cart = tools.call('ver_carrinho', {'mostrar': True})
+    assert cart.events == (OpenCart(),)
+    assert {key: cart.data[key] for key in ('total', 'economia_em_promocoes', 'total_no_pix', 'parcelas',
+                                            'frete_em_campo_grande')} == {
+        'total': 'R$ 1.039,10', 'economia_em_promocoes': 'R$ 109,80', 'total_no_pix': 'R$ 1.009,10',
+        'parcelas': 'até 10x de R$ 103,91 sem juros', 'frete_em_campo_grande': 'grátis'}
+    assert cart.data['pagamento_combinado'] == 'só em compras acima de R$ 2.000,00'
+    promo, regular = cart.data['itens']
+    assert (promo['preco_original'], promo['promocao']) == ('R$ 549,00', 'Desconto Exclusivo: 20% de desconto')
+    assert 'preco_original' not in regular and 'promocao' not in regular
+    removed = tools.call('remover_do_carrinho', {'produto_id': 81})
+    assert removed.events == (RemoveFromCart(81),)
+    assert removed.data['carrinho']['frete_em_campo_grande'] == 'R$ 35,00 (frete grátis acima de R$ 500,00)'
+    assert 'não está no carrinho' in tools.call('remover_do_carrinho', {'produto_id': 81}).data['erro']
 
 
 # --- robustness ----------------------------------------------------------------------------------------------------

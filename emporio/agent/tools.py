@@ -14,12 +14,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from .. import policies
+from ..cart import Cart
 from ..data import STOPWORDS, Category, Product, StoreData, normalize
 from ..format import brl
 from ..i18n import LANGUAGES, Translator
 from . import views
 from .base import AgentContext
-from .events import OpenProduct, ShowProducts, UIAction
+from .events import AddToCart, OpenCart, OpenProduct, RemoveFromCart, ShowProducts, UIAction
 
 log = logging.getLogger(__name__)
 
@@ -57,12 +58,19 @@ class Tool:
 
 
 class Toolbox:
-    """The tools for one turn of one conversation."""
+    """The tools for one turn of one conversation.
+
+    Cart changes are tried on a copy of the customer's cart first, so the model learns the real outcome ('só temos
+    2 unidades') before it writes the answer; the interface then applies the same change to the real cart.
+    """
 
     def __init__(self, store: StoreData, context: AgentContext) -> None:
         self.store = store
         self.context = context
         self.t = Translator(context.language)  # what the customer reads directly
+        self.cart = Cart(store, {str(item['product_id']): item['quantity'] for item in context.cart.get('items', [])})
+        # products the model has really looked at this turn: history is text only, so an id from memory may be a guess
+        self.seen_ids = {line.product.id for line in self.cart.lines} | {context.viewing_product_id}
         self.tools = {tool.name: tool for tool in self._tools()}
 
     def schemas(self) -> list[dict]:
@@ -122,9 +130,11 @@ class Toolbox:
         if 0 < len(found) <= 3:  # 'and in 5x?' usually comes with the price, in the same message
             for view, product in zip(data['produtos'], found, strict=True):
                 view['parcelas_disponiveis'] = views.installment_options(product.price)
+        self.seen_ids.update(p.id for p in found[:MAX_LISTED])
         if not found and only_available:
             if unavailable := matching(only_available=False):
                 data['indisponiveis'] = [views.product_summary(p, self.store) for p in unavailable[:MAX_LISTED]]
+                self.seen_ids.update(p.id for p in unavailable[:MAX_LISTED])
                 data['alternativas'] = self._alternatives_view(unavailable[0])
         elif found and not any(p.is_available for p in found):
             data['alternativas'] = self._alternatives_view(found[0])
@@ -135,6 +145,7 @@ class Toolbox:
                                              for word in words if word not in STOPWORDS)), [])
                 if similar:
                     data['parecidos'] = [views.product_summary(p, self.store) for p in similar[:3]]
+                    self.seen_ids.update(p.id for p in similar[:3])
         # '7 cordas', 'violão com afinador' and 'pré-amplificador' describe an instrument; 'cordas' alone may be strings
         accessory = any(word in ACCESSORIES and not (i and (words[i - 1] in ('com', 'pre') or (
             word.startswith(('corda', 'string', 'corde')) and words[i - 1].isdigit()))) for i, word in enumerate(words))
@@ -155,6 +166,7 @@ class Toolbox:
 
     def view_product(self, produto_id: int) -> ToolResult:
         product = self._product(produto_id)
+        self.seen_ids.add(product.id)
         data = views.product_details(product, self.store)
         if not product.is_available:
             data['alternativas'] = self._alternatives_view(product)
@@ -163,6 +175,7 @@ class Toolbox:
 
     def _alternatives_view(self, product: Product) -> list[dict]:
         alternatives = self._alternatives(product)
+        self.seen_ids.update(p.id for p in alternatives)
         return [views.product_summary(p, self.store) for p in alternatives]
 
     def _alternatives(self, product: Product, limit: int = 3) -> list[Product]:
@@ -173,6 +186,38 @@ class Toolbox:
         candidates.sort(key=lambda p: (p.image != product.image, p.specs.get('strings') != product.specs.get('strings'),
                                        abs(p.price - product.price)))
         return candidates[:limit]
+
+    # --- cart ----------------------------------------------------------------------------------------------------
+
+    def view_cart(self, mostrar: bool = False) -> ToolResult:
+        events = (OpenCart(),) if _boolean(mostrar, 'mostrar') else ()
+        return ToolResult(views.cart_view(self.cart), events)
+
+    def add_to_cart(self, produto_id: int, quantidade: int = 1) -> ToolResult:
+        product = self._product(produto_id)
+        quantity = _integer(quantidade, 'quantidade')
+        if product.id not in self.seen_ids:
+            self.seen_ids.add(product.id)  # the model now knows which product this id is
+            raise ToolError(f'Nada foi adicionado. O id {product.id} é {product.name} ({product.availability_label}) e não '
+                            'apareceu em nenhuma consulta desta resposta. Se for o produto que o cliente pediu e estiver '
+                            'disponível, chame de novo; se não for, use buscar_produtos com o nome que ele disse.')
+        if error := self.cart.add(product.id, quantity):
+            in_cart = next((line.quantity for line in self.cart.lines if line.product.id == product.id), 0)
+            if in_cart and quantity >= 1 and product.is_available:  # refused for stock: say what still fits
+                room = product.stock - in_cart
+                error += (f' O cliente já tem {in_cart} no carrinho; cabem mais {room}.' if room > 0
+                          else f' O cliente já tem todas as {in_cart} no carrinho.')
+            raise ToolError(f'Nada foi adicionado. {error}')
+        return ToolResult({'adicionado': f'{quantity}x {product.name}', 'carrinho': views.cart_view(self.cart)},
+                          (AddToCart(product.id, quantity),), (self.t('suggestion.view_cart'), self.t('suggestion.installments')))
+
+    def remove_from_cart(self, produto_id: int) -> ToolResult:
+        product = self._product(produto_id)
+        if all(line.product.id != product.id for line in self.cart.lines):
+            raise ToolError(f'{product.name} não está no carrinho.')
+        self.cart.remove(product.id)
+        return ToolResult({'removido': product.name, 'carrinho': views.cart_view(self.cart)},
+                          (RemoveFromCart(product.id),))
 
     # --- argument checks -----------------------------------------------------------------------------------------
 
@@ -214,6 +259,19 @@ class Toolbox:
                  'promoção) e abre a página dele na vitrine. Use quando o cliente se interessar por um item ou '
                  'perguntar sobre ele. Se o produto estiver indisponível, a resposta traz alternativas disponíveis.',
                  _object({'produto_id': {'type': 'integer'}}, required=['produto_id']), self.view_product),
+            Tool('ver_carrinho',
+                 'Itens, total, total no PIX, parcelas, frete e pagamento combinado do carrinho do cliente. Use para '
+                 'perguntas como "quanto fica tudo?" ou "tem frete grátis?". `mostrar` abre o carrinho na tela.',
+                 _object({'mostrar': {'type': 'boolean'}}), self.view_cart),
+            Tool('adicionar_ao_carrinho',
+                 'Coloca um produto no carrinho do cliente, conferindo disponibilidade e estoque. Use só quando o '
+                 'cliente pedir. Se der erro, explique o motivo ao cliente; não diga que adicionou.',
+                 _object({'produto_id': {'type': 'integer'},
+                          'quantidade': {'type': 'integer', 'description': 'Padrão 1.'}}, required=['produto_id']),
+                 self.add_to_cart),
+            Tool('remover_do_carrinho',
+                 'Tira um produto (todas as unidades) do carrinho do cliente. Use só quando o cliente pedir.',
+                 _object({'produto_id': {'type': 'integer'}}, required=['produto_id']), self.remove_from_cart),
         ]
 
 
