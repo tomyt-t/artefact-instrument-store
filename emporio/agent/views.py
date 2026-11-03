@@ -20,6 +20,16 @@ SPEC_VALUES = {'nylon': 'nylon', 'steel': 'aço', 'yes': 'sim', 'no': 'não', 'i
                'Synthesizer': 'sintetizador'}
 UNVERIFIED_NOTE = ('A descrição cadastrada deste produto é de outro instrumento. Só nome, preço e disponibilidade são '
                    'confiáveis: marca, modelo e especificações precisam ser confirmados com a equipe.')
+AVAILABILITY_NOTES = {
+    'Esgotado': 'Temporariamente sem estoque; o sistema não tem previsão de reposição nem reserva de preço (6.2).',
+    'Fora de linha': 'Não faz mais parte do catálogo.',
+    'Em breve': 'Ainda não chegou à loja e não tem data prevista.',
+}
+QUOTE_WITH_TEAM = f'A cotação é individual, com a equipe pelo {policies.STORE.phone} (5.2).'
+OTHER_CITIES = ('Fora da região de Campo Grande o frete é calculado pelo CEP: PAC de 5 a 12 dias úteis, SEDEX de 2 a 5 '
+                f'e Jadlog de 3 a 8. A vitrine não calcula esse valor: quem informa é a equipe, pelo {policies.STORE.phone}. '
+                'O manual não lista as cidades da região: numa cidade vizinha, a equipe confirma se o frete de Campo '
+                'Grande vale.')
 ELECTRIC_GUITARS, ACOUSTIC_GUITARS = 1, 5
 CATEGORY_CHOICES = {
     ('pt-BR', ELECTRIC_GUITARS): 'Guitarras (só "electric guitar", "guitare électrique")',
@@ -67,4 +77,19 @@ def product_summary(product: Product, store: StoreData) -> dict:
                                   for key, value in product.specs.items()}
     else:
         view['aviso'] = UNVERIFIED_NOTE
+    return view
+
+
+def product_details(product: Product, store: StoreData) -> dict:
+    view = product_summary(product, store)
+    view['parcelas_disponiveis'] = installment_options(product.price)
+    if product.status == 'active':
+        view['estoque'] = product.stock  # discontinued and upcoming items keep stale counts in the CSV
+    if note := AVAILABILITY_NOTES.get(product.availability_label):
+        view['situacao'] = note
+    view['frete_outras_cidades'] = OTHER_CITIES
+    if product.category_id in policies.LARGE_INSTRUMENT_CATEGORIES:
+        view['frete_especial'] = f'Instrumento de grande porte: pode exigir frete especial. {QUOTE_WITH_TEAM}'
+    if product.details_verified:
+        view['descricao'] = product.description
     return view

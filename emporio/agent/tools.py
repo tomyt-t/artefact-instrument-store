@@ -19,11 +19,22 @@ from ..format import brl
 from ..i18n import LANGUAGES, Translator
 from . import views
 from .base import AgentContext
-from .events import ShowProducts, UIAction
+from .events import OpenProduct, ShowProducts, UIAction
 
 log = logging.getLogger(__name__)
 
 MAX_LISTED = 15  # products described to the model per search; the storefront highlights all of them
+MAX_ARGUMENT_CHARS = 2000  # legitimate calls are far shorter; a huge one could hang the parsers
+ACCESSORIES = frozenset({
+    'corda', 'cordas', 'encordoamento', 'encordoamentos', 'palheta', 'palhetas', 'cabo', 'cabos', 'case', 'cases',
+    'capa', 'capas', 'bag', 'bags', 'pedal', 'pedais', 'pedaleira', 'pedaleiras', 'amplificador', 'amplificadores',
+    'afinador', 'afinadores', 'baqueta', 'baquetas', 'correia', 'correias', 'estante', 'estantes', 'suporte',
+    'suportes', 'capotraste', 'capotrastes',
+    'string', 'strings', 'pick', 'picks', 'cable', 'cables', 'amp', 'amps', 'amplifier', 'amplifiers', 'tuner', 'tuners',
+    'drumstick', 'drumsticks', 'strap', 'straps', 'stand', 'stands', 'capo', 'capos',
+    'corde', 'cordes', 'mediator', 'mediators', 'ampli', 'amplis', 'amplificateur', 'amplificateurs', 'accordeur',
+    'accordeurs', 'etui', 'etuis', 'housse', 'housses', 'baguette', 'baguettes', 'sangle', 'sangles'})
+NOT_IN_CATALOG = 'Esse produto não está no catálogo. Cite só os produtos que vieram aqui, nunca outra marca ou modelo.'
 
 
 class ToolError(Exception):
@@ -63,6 +74,8 @@ class Toolbox:
         tool = self.tools.get(name)
         if tool is None:
             return ToolResult({'erro': f'Ferramenta desconhecida: {name}.'})
+        if isinstance(arguments, str) and len(arguments) > MAX_ARGUMENT_CHARS:
+            return ToolResult({'erro': 'Os argumentos estão longos demais.'})
         try:
             args = json.loads(arguments or '{}') if isinstance(arguments, str) else dict(arguments or {})
         except (json.JSONDecodeError, TypeError, ValueError, RecursionError):
@@ -109,16 +122,65 @@ class Toolbox:
         if 0 < len(found) <= 3:  # 'and in 5x?' usually comes with the price, in the same message
             for view, product in zip(data['produtos'], found, strict=True):
                 view['parcelas_disponiveis'] = views.installment_options(product.price)
+        if not found and only_available:
+            if unavailable := matching(only_available=False):
+                data['indisponiveis'] = [views.product_summary(p, self.store) for p in unavailable[:MAX_LISTED]]
+                data['alternativas'] = self._alternatives_view(unavailable[0])
+        elif found and not any(p.is_available for p in found):
+            data['alternativas'] = self._alternatives_view(found[0])
+        if not found and 'indisponiveis' not in data and not on_sale:  # 'no promotion' says nothing about the catalog
+            if query and max_price is None:
+                data['aviso'] = NOT_IN_CATALOG
+                similar = next(filter(None, (self.store.search(word, only_available=True, prefix_last=False)
+                                             for word in words if word not in STOPWORDS)), [])
+                if similar:
+                    data['parecidos'] = [views.product_summary(p, self.store) for p in similar[:3]]
+        # '7 cordas', 'violão com afinador' and 'pré-amplificador' describe an instrument; 'cordas' alone may be strings
+        accessory = any(word in ACCESSORIES and not (i and (words[i - 1] in ('com', 'pre') or (
+            word.startswith(('corda', 'string', 'corde')) and words[i - 1].isdigit()))) for i, word in enumerate(words))
+        if accessory:
+            data['escopo'] = ('A loja só vende instrumentos musicais, não acessórios avulsos (cordas, palhetas, cabos, '
+                              'cases, pedais, amplificadores). Se o cliente procura um acessório, explique isso.')
         title = ' '.join(filter(None, [self.t.category_name(category) if category else self.t('agent.products'),
                                        self.t('agent.on_sale') if on_sale else '',
                                        f'"{query}"' if query else '',
                                        self.t('agent.up_to', amount=brl(max_price)) if max_price is not None else '']))
-        events = (ShowProducts(tuple(p.id for p in found), title),) if found else ()
+        # 'cordas de aço' alone may be strings, not a guitar: nothing lights up until the customer says which
+        show = found and not (accessory and category is None)
+        events = (ShowProducts(tuple(p.id for p in found), title),) if show else ()
         if len(found) > MAX_LISTED:
-            data['observacao'] = f'Só os {MAX_LISTED} primeiros estão listados. A vitrine destaca os {len(found)}.'
+            data['observacao'] = f'Só os {MAX_LISTED} primeiros estão listados.' + (
+                f' A vitrine destaca os {len(found)}.' if show else '')
         return ToolResult(data, events, (self.t('suggestion.on_sale'), self.t('suggestion.recommend')) if found else ())
 
+    def view_product(self, produto_id: int) -> ToolResult:
+        product = self._product(produto_id)
+        data = views.product_details(product, self.store)
+        if not product.is_available:
+            data['alternativas'] = self._alternatives_view(product)
+            return ToolResult(data, (OpenProduct(product.id),))
+        return ToolResult(data, (OpenProduct(product.id),), (self.t('suggestion.add_to_cart'), self.t('suggestion.pix')))
+
+    def _alternatives_view(self, product: Product) -> list[dict]:
+        alternatives = self._alternatives(product)
+        return [views.product_summary(p, self.store) for p in alternatives]
+
+    def _alternatives(self, product: Product, limit: int = 3) -> list[Product]:
+        """Available products of the same category: same type of instrument first (7 strings, dreadnought...), then
+        the same string material, then the closest price."""
+        candidates = [p for p in self.store.products.values()
+                      if p.category_id == product.category_id and p.is_available and p.id != product.id]
+        candidates.sort(key=lambda p: (p.image != product.image, p.specs.get('strings') != product.specs.get('strings'),
+                                       abs(p.price - product.price)))
+        return candidates[:limit]
+
     # --- argument checks -----------------------------------------------------------------------------------------
+
+    def _product(self, value: object) -> Product:
+        product_id = _integer(value, 'produto_id')
+        if product_id not in self.store.products:
+            raise ToolError(f'Não existe produto com id {product_id}. Use buscar_produtos para achar o id.')
+        return self.store.products[product_id]
 
     def _category(self, value: object) -> Category:
         wanted = normalize(_text(value, 'categoria'))
@@ -147,6 +209,11 @@ class Toolbox:
                                         'esgotados, fora de linha e em breve.'},
                      'ordem': {'type': 'string', 'enum': ['menor_preco', 'maior_preco']},
                  }), self.search_products),
+            Tool('ver_produto',
+                 'Detalhes de um produto (preço, PIX, parcelas, estoque, frete em Campo Grande, especificações, '
+                 'promoção) e abre a página dele na vitrine. Use quando o cliente se interessar por um item ou '
+                 'perguntar sobre ele. Se o produto estiver indisponível, a resposta traz alternativas disponíveis.',
+                 _object({'produto_id': {'type': 'integer'}}, required=['produto_id']), self.view_product),
         ]
 
 
@@ -155,6 +222,17 @@ def _object(properties: dict, required: list[str] | None = None) -> dict:
     if required:
         schema['required'] = required
     return schema
+
+
+def _integer(value: object, name: str) -> int:
+    """8, 8.0, '8' and '#8' are all 8; anything else is a mistake to report."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str) and (match := re.fullmatch(r'\s*(?:n[ºo°.]?\s*|#)?\s*(\d+)\s*', value.lower())):
+        return int(match[1])
+    raise ToolError(f'{name} precisa ser um número inteiro, recebi {value!r}.')
 
 
 def _number(value: object, name: str) -> float:
