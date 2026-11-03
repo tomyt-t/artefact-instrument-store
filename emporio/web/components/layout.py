@@ -96,7 +96,7 @@ class SiteHeader:
             ui.timer(0.05, lambda: self.cart_badge.classes('bump'), once=True)
 
 
-def hero(t: Translator, *, on_browse: Callable[[], None]) -> None:
+def hero(t: Translator, *, on_browse: Callable[[], None], on_chat: Callable[[], None]) -> None:
     with ui.row().classes('w-full items-center rounded-[32px] bg-sand overflow-hidden no-wrap max-md:flex-col') \
             .classes('px-8 md:px-14 py-10 gap-8'):
         with ui.column().classes('gap-5 md:w-1/2'):
@@ -106,6 +106,8 @@ def hero(t: Translator, *, on_browse: Callable[[], None]) -> None:
             with ui.row().classes('gap-3 no-wrap max-sm:flex-wrap'):
                 ui.button(t('hero.browse'), icon='arrow_downward', on_click=on_browse) \
                     .props('unelevated rounded no-caps size=md')
+                ui.button(t('hero.chat'), icon='forum', on_click=on_chat) \
+                    .props('outline rounded no-caps size=md color=secondary')
         with ui.element('div').classes('relative md:w-1/2 w-full h-[340px] md:h-[400px]'):
             for slug, position in (('violao-eletroacustico', 'left-[2%] top-[8%] w-[46%] -rotate-12'),
                                    ('guitarra-eletrica', 'left-[30%] top-0 w-[44%] rotate-6'),

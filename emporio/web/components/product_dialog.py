@@ -13,10 +13,12 @@ from .product_card import availability_badge, price_block
 
 
 class ProductDialog:
-    def __init__(self, store: StoreData, t: Translator, *, on_add: Callable[[int], None]) -> None:
+    def __init__(self, store: StoreData, t: Translator, *, on_add: Callable[[int], None],
+                 on_ask: Callable[[str], None]) -> None:
         self.store = store
         self.t = t
         self.on_add = on_add
+        self.on_ask = on_ask
         self.product: Product | None = None
         with ui.dialog() as self.dialog, ui.card().classes('w-full max-w-4xl p-0 rounded-3xl overflow-hidden'):
             self.content()
@@ -63,3 +65,6 @@ class ProductDialog:
                         .props('unelevated rounded no-caps size=md').classes('grow')
                     if not product.is_available:
                         add.props('disable')
+                    ui.button(t('product.ask_button'), icon='forum',
+                              on_click=lambda: (self.dialog.close(), self.on_ask(t('product.ask', name=name)))) \
+                        .props('outline rounded no-caps color=secondary')

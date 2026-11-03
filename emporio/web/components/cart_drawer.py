@@ -1,6 +1,7 @@
 """Right-hand cart drawer. Re-renders on every cart change, whether it came from a click or from the agent."""
 from __future__ import annotations
 
+from collections.abc import Callable
 
 from nicegui import ui
 
@@ -12,9 +13,10 @@ from ..theme import product_image
 
 
 class CartDrawer:
-    def __init__(self, cart: Cart, t: Translator) -> None:
+    def __init__(self, cart: Cart, t: Translator, *, on_ask: Callable[[str], None]) -> None:
         self.cart = cart
         self.t = t
+        self.on_ask = on_ask
         with ui.right_drawer(value=False).props('width=400 bordered').classes('bg-cream p-0') as self.drawer:
             self.content()
         cart.on_change(self.content.refresh)
@@ -37,6 +39,9 @@ class CartDrawer:
                     ui.icon('shopping_bag', size='4rem', color='grey-5')
                     ui.label(t('drawer.empty')).classes('text-lg font-semibold')
                     ui.label(t('drawer.empty_text')).classes('text-muted')
+                    ui.button(t('drawer.suggest'), icon='forum',
+                              on_click=lambda: (self.drawer.hide(), self.on_ask(t('drawer.suggest_question')))) \
+                        .props('unelevated rounded no-caps')
                 return
             with ui.scroll_area().classes('grow'):
                 for line in cart.lines:
