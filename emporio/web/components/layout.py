@@ -57,7 +57,7 @@ def language_selector(t: Translator) -> None:
 
 
 class SiteHeader:
-    def __init__(self, t: Translator, *, on_search: Callable[[str], None]) -> None:
+    def __init__(self, t: Translator, *, on_search: Callable[[str], None], on_cart: Callable[[], None]) -> None:
         with ui.header().classes('bg-cream text-ink p-0 gap-0 border-b border-[#ece2d4]'):
             with ui.row().classes('w-full justify-center gap-6 bg-secondary text-white text-xs py-1.5 px-4 no-wrap'):
                 ui.label(t('header.pix_off', percent=f'{policies.PIX_DISCOUNT:.0%}')).classes('max-sm:hidden')
@@ -81,6 +81,16 @@ class SiteHeader:
                         .classes('bg-green-500' if is_open else 'bg-grey-5')
                     ui.label(status).classes('text-muted')
                 language_selector(t)
+                with ui.button(icon='shopping_bag', on_click=on_cart) \
+                        .props('flat round size=lg color=secondary') as self.cart_button:
+                    self.cart_badge = ui.badge('0', color='primary').props('floating rounded')
+
+    def set_cart_count(self, count: int, *, bump: bool = False) -> None:
+        self.cart_badge.set_text(str(count))
+        self.cart_badge.visible = count > 0
+        if bump:
+            self.cart_badge.classes(remove='bump')
+            ui.timer(0.05, lambda: self.cart_badge.classes('bump'), once=True)
 
 
 def hero(t: Translator, *, on_browse: Callable[[], None]) -> None:

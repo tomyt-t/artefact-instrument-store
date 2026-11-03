@@ -95,5 +95,22 @@
   "spec.shells": "Shells",
   "spec.strings": "Strings",
   "spec.top": "Top",
-  "spec.type": "Type"
+  "spec.type": "Type",
+  "drawer.checkout": "Check out",
+  "drawer.checkout_note": "Checkout is out of scope for this prototype: the focus is the customer service agent.",
+  "drawer.discount": "{percent}% off",
+  "drawer.empty": "Your cart is empty",
+  "drawer.empty_text": "Not sure where to start? The assistant can help you choose.",
+  "drawer.free_shipping": "Free shipping to Campo Grande and the surrounding area 🎉",
+  "drawer.freight_quote": "Acoustic drum kits may require special shipping with an individual quote.",
+  "drawer.installments": "or up to {n}x of {amount}, interest-free by card",
+  "drawer.list_price": "List price",
+  "drawer.missing": "Spend over {limit} for free shipping in Campo Grande ({missing} to go).",
+  "drawer.opened": "Opened the cart",
+  "drawer.other_cities": "Other cities: PAC, SEDEX or Jadlog, calculated from the postal code.",
+  "drawer.pix": "With PIX",
+  "drawer.pix_note": "PIX: {percent} off items not on sale",
+  "drawer.promo_savings": "Promotion discounts",
+  "drawer.title": "Your cart",
+  "drawer.total": "Total"
 }

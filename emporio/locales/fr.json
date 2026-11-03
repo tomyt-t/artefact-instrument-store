@@ -95,5 +95,22 @@
   "spec.shells": "Fûts",
   "spec.strings": "Cordes",
   "spec.top": "Table",
-  "spec.type": "Type"
+  "spec.type": "Type",
+  "drawer.checkout": "Passer la commande",
+  "drawer.checkout_note": "Le paiement n'entre pas dans le périmètre de ce prototype : l'accent est mis sur l'agent de service client.",
+  "drawer.discount": "{percent} % de réduction",
+  "drawer.empty": "Votre panier est vide",
+  "drawer.empty_text": "Vous ne savez pas par où commencer ? L'assistant vous aide à choisir.",
+  "drawer.free_shipping": "Livraison gratuite à Campo Grande et ses environs 🎉",
+  "drawer.freight_quote": "Les batteries acoustiques peuvent nécessiter une livraison spéciale sur devis.",
+  "drawer.installments": "ou jusqu'à {n}x {amount} sans intérêts par carte",
+  "drawer.list_price": "Prix catalogue",
+  "drawer.missing": "Dépassez {limit} pour la livraison gratuite à Campo Grande (il manque {missing}).",
+  "drawer.opened": "Panier ouvert",
+  "drawer.other_cities": "Autres villes : PAC, SEDEX ou Jadlog, calculé selon le code postal.",
+  "drawer.pix": "Avec PIX",
+  "drawer.pix_note": "PIX : {percent} de réduction sur les articles hors promotion",
+  "drawer.promo_savings": "Réductions de promotion",
+  "drawer.title": "Votre panier",
+  "drawer.total": "Total"
 }

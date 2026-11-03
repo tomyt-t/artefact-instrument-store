@@ -95,5 +95,22 @@
   "spec.shells": "Cascos",
   "spec.strings": "Cordas",
   "spec.top": "Tampo",
-  "spec.type": "Tipo"
+  "spec.type": "Tipo",
+  "drawer.checkout": "Finalizar compra",
+  "drawer.checkout_note": "Checkout fora do escopo deste protótipo: o foco é o agente de atendimento.",
+  "drawer.discount": "{percent}% de desconto",
+  "drawer.empty": "Seu carrinho está vazio",
+  "drawer.empty_text": "Não sabe por onde começar? O assistente te ajuda a escolher.",
+  "drawer.free_shipping": "Frete grátis para Campo Grande e região 🎉",
+  "drawer.freight_quote": "Baterias acústicas podem exigir frete especial com cotação individual.",
+  "drawer.installments": "ou em até {n}x de {amount} sem juros no cartão",
+  "drawer.list_price": "Preço de tabela",
+  "drawer.missing": "Passe de {limit} e ganhe frete grátis em Campo Grande (faltam {missing}).",
+  "drawer.opened": "Abri o carrinho",
+  "drawer.other_cities": "Outras cidades: PAC, SEDEX ou Jadlog, calculado pelo CEP.",
+  "drawer.pix": "No PIX",
+  "drawer.pix_note": "PIX: {percent} off nos itens sem promoção",
+  "drawer.promo_savings": "Descontos de promoção",
+  "drawer.title": "Seu carrinho",
+  "drawer.total": "Total"
 }
