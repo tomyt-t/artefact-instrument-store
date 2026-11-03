@@ -13,6 +13,7 @@ from . import theme
 from .components.cart_drawer import CartDrawer
 from .components.catalog import CatalogView, offers_strip
 from .components.layout import SiteHeader, hero, perks, site_footer
+from .components.order_dialog import OrderDialog
 from .components.product_dialog import ProductDialog
 
 STATIC_DIR = Path(__file__).resolve().parent / 'static'
@@ -33,7 +34,8 @@ def index() -> None:
         else:
             ui.notify(t('card.added', name=t.product_name(store.products[product_id])), type='positive', icon='check')
 
-    header = SiteHeader(t, on_search=lambda q: catalog.set_query(q), on_cart=lambda: cart_drawer.open())
+    header = SiteHeader(t, on_search=lambda q: catalog.set_query(q), on_cart=lambda: cart_drawer.open(),
+                        on_track=lambda: orders.lookup.open())
     with ui.column().classes('w-full max-w-7xl mx-auto px-4 md:px-8 pt-6 pb-4 gap-12'):
         hero(t, on_browse=lambda: ui.run_javascript(
             'document.getElementById("catalogo")?.scrollIntoView({behavior: "smooth"})'))
@@ -44,6 +46,7 @@ def index() -> None:
 
     cart_drawer = CartDrawer(cart, t)
     product_dialog = ProductDialog(store, t, on_add=add_from_click)
+    orders = OrderDialog(store, t)
 
     header.set_cart_count(cart.count)
     cart.on_change(lambda: header.set_cart_count(cart.count, bump=True))

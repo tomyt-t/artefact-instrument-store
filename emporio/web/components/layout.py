@@ -57,7 +57,8 @@ def language_selector(t: Translator) -> None:
 
 
 class SiteHeader:
-    def __init__(self, t: Translator, *, on_search: Callable[[str], None], on_cart: Callable[[], None]) -> None:
+    def __init__(self, t: Translator, *, on_search: Callable[[str], None], on_cart: Callable[[], None],
+                 on_track: Callable[[], None]) -> None:
         with ui.header().classes('bg-cream text-ink p-0 gap-0 border-b border-[#ece2d4]'):
             with ui.row().classes('w-full justify-center gap-6 bg-secondary text-white text-xs py-1.5 px-4 no-wrap'):
                 ui.label(t('header.pix_off', percent=f'{policies.PIX_DISCOUNT:.0%}')).classes('max-sm:hidden')
@@ -80,6 +81,8 @@ class SiteHeader:
                     ui.element('span').classes('w-2.5 h-2.5 rounded-full') \
                         .classes('bg-green-500' if is_open else 'bg-grey-5')
                     ui.label(status).classes('text-muted')
+                ui.button(t('header.my_order'), icon='local_shipping', on_click=on_track) \
+                    .props('flat rounded no-caps color=secondary').classes('max-md:hidden')
                 language_selector(t)
                 with ui.button(icon='shopping_bag', on_click=on_cart) \
                         .props('flat round size=lg color=secondary') as self.cart_button:

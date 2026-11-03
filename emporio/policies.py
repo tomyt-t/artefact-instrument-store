@@ -79,3 +79,8 @@ def next_opening(now: datetime) -> datetime | None:
         if hours and (days_ahead > 0 or now.hour < hours[0]):
             return day.replace(hour=hours[0], minute=0, second=0, microsecond=0)
     return None
+
+
+def delivery_days_late(estimated: date | None, today: date) -> int:
+    """Days past the estimated delivery date (0 when there is no estimate or it has not passed)."""
+    return max(0, (today - estimated).days) if estimated else 0
