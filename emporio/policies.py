@@ -1,6 +1,7 @@
-"""Business rules from data/políticas_da_loja.pdf that the code must compute (prices, shipping, hours).
+"""Business rules from data/políticas_da_loja.pdf that the code must compute: prices, shipping, hours, holidays,
+deadlines and split payment.
 
-Free-text policies (returns, warranty, privacy) stay in the PDF and are read by the agent.
+The wording of the policies stays in the PDF and is read by the agent.
 """
 from __future__ import annotations
 
@@ -12,7 +13,6 @@ from zoneinfo import ZoneInfo
 @dataclass(frozen=True)
 class StoreInfo:
     name: str = 'Empório da Música'
-    slogan: str = 'Sua música começa aqui.'
     street: str = 'Rua 14 de Maio, 3200 — Centro'
     city: str = 'Campo Grande - MS, 79202-333'
     phone: str = '(67) 3341-4444'  # The manual lists (67) 3321-4500 as WhatsApp in section 7; we follow the company data table (1.2).
@@ -27,7 +27,7 @@ TIMEZONE = ZoneInfo('America/Campo_Grande')
 OPENING_HOURS = {0: (9, 18), 1: (9, 18), 2: (9, 18), 3: (9, 18), 4: (9, 18), 5: (9, 13)}
 WEEKDAYS = ('segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo')
 # (month, day): national holidays, Mato Grosso do Sul (11/10) and Campo Grande (13/06, 26/08), plus Good Friday.
-# Pontos facultativos such as Carnaval and Corpus Christi do not close the store.
+# Optional holidays ('pontos facultativos') such as Carnaval and Corpus Christi do not close the store.
 HOLIDAYS = {(1, 1), (4, 21), (5, 1), (6, 13), (8, 26), (9, 7), (10, 11), (10, 12), (11, 2), (11, 15), (11, 20),
             (12, 25)}
 
@@ -37,8 +37,9 @@ FREE_SHIPPING_ABOVE = 500.0  # Campo Grande metro area only (5.1)
 LOCAL_SHIPPING_FEE = 35.0
 LARGE_INSTRUMENT_CATEGORIES = {3}  # drum kits may need a special freight quote (5.2)
 RETURN_WINDOW_DAYS = 7
-# Deadlines in calendar days: RETURN_WINDOW_DAYS for arrependimento (4.1) and troca por preferência (4.3), counted
-# from receipt; defect exchange (4.2) from the purchase; legal warranty (8.1) from receipt.
+# Deadlines in calendar days: RETURN_WINDOW_DAYS for withdrawal ('arrependimento', 4.1) and preference exchange
+# ('troca por preferência', 4.3), counted from receipt; defect exchange (4.2) from the purchase; legal warranty (8.1)
+# from receipt.
 DEFECT_EXCHANGE_DAYS = 30
 LEGAL_WARRANTY_DAYS = 90
 

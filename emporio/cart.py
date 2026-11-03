@@ -60,10 +60,6 @@ class Cart:
     def remove(self, product_id: int) -> None:
         self.set_quantity(product_id, 0)
 
-    def clear(self) -> None:
-        self._items.clear()
-        self._notify()
-
     @property
     def lines(self) -> list[CartLine]:
         return [CartLine(self.store.products[int(pid)], qty)

@@ -92,5 +92,5 @@ def test_listeners_only_run_on_changes(store):
     cart.add(96)
     assert calls == []
     cart.add(81)
-    cart.clear()
+    cart.remove(81)
     assert len(calls) == 2

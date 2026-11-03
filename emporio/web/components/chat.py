@@ -98,7 +98,7 @@ class ChatWidget:
         self.close() if self.panel.visible else self.open()
 
     def ask(self, text: str) -> None:
-        """Opens the chat and sends `text` as if the customer typed it (used by 'Perguntar ao assistente')."""
+        """Opens the chat and sends `text` as if the customer typed it (used by the ask button on the product page)."""
         self.open()
         if self.busy:  # the question waits in the input instead of being lost
             self.input.value = text

@@ -85,7 +85,7 @@ class SiteHeader:
                     .props('flat rounded no-caps color=secondary').classes('max-md:hidden')
                 language_selector(t)
                 with ui.button(icon='shopping_bag', on_click=on_cart) \
-                        .props('flat round size=lg color=secondary') as self.cart_button:
+                        .props('flat round size=lg color=secondary'):
                     self.cart_badge = ui.badge('0', color='primary').props('floating rounded')
 
     def set_cart_count(self, count: int, *, bump: bool = False) -> None:

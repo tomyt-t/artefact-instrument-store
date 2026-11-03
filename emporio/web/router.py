@@ -9,7 +9,7 @@ from typing import TypeVar
 from ..agent.events import UIAction
 
 A = TypeVar('A', bound=UIAction)
-# A handler may return a short receipt ('Adicionado ao carrinho: …') that the chat shows under the answer.
+# A handler may return a short receipt ('In your cart: …') that the chat shows under the answer.
 Handler = Callable[[A], str | None | Awaitable[str | None]]
 
 

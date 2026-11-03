@@ -6,7 +6,7 @@ while the storefront reacts to them (cart, catalog, order panel) in real time.
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
@@ -17,7 +17,7 @@ class TextDelta:
 
 @dataclass(frozen=True)
 class ToolStatus:
-    """The agent started consulting a source; `label` is shown to the customer, e.g. 'Consultando o catálogo…'."""
+    """The agent started consulting a source; `label` is shown to the customer, e.g. 'Checking the catalog…'."""
     tool: str
     label: str
 
@@ -30,7 +30,7 @@ class Suggestions:
 
 @dataclass(frozen=True)
 class ShowProducts:
-    """Put a selection of products on screen, e.g. the result of 'violões até R$ 1.000'."""
+    """Put a selection of products on screen, e.g. the result of 'guitars up to R$ 1,000'."""
     product_ids: tuple[int, ...]
     title: str
 
@@ -64,8 +64,3 @@ class ShowOrder:
 
 UIAction = ShowProducts | OpenProduct | AddToCart | RemoveFromCart | OpenCart | ShowOrder
 AgentEvent = TextDelta | ToolStatus | Suggestions | UIAction
-
-
-def to_dict(event: AgentEvent) -> dict:
-    """JSON-friendly form, e.g. for logs or an HTTP/WebSocket API."""
-    return {'type': type(event).__name__, **asdict(event)}

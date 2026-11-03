@@ -34,7 +34,7 @@ def test_opening_status_closes_on_holidays(now, expected):
 def test_holiday_calendar():
     assert [easter(y) for y in (2026, 2027, 2028)] == [date(2026, 4, 5), date(2027, 3, 28), date(2028, 4, 16)]
     assert all(is_holiday(d) for d in (date(2026, 10, 11), date(2026, 6, 13), date(2026, 8, 26), date(2027, 3, 26)))
-    # pontos facultativos: Carnaval and Corpus Christi
+    # optional holidays ('pontos facultativos'): Carnaval and Corpus Christi
     assert not any(is_holiday(d) for d in (date(2026, 2, 16), date(2026, 2, 17), date(2026, 6, 4)))
 
 
