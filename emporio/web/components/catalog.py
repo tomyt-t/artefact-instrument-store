@@ -13,9 +13,11 @@ SORTS = ('relevance', 'price_asc', 'price_desc', 'newest')
 
 
 class CatalogView:
-    def __init__(self, store: StoreData, t: Translator, *, on_add: Callable[[int], None]) -> None:
+    def __init__(self, store: StoreData, t: Translator, *, on_open: Callable[[int], None],
+                 on_add: Callable[[int], None]) -> None:
         self.store = store
         self.t = t
+        self.on_open = on_open
         self.on_add = on_add
         self.query = ''
         self.category_id: int | None = None
@@ -82,10 +84,11 @@ class CatalogView:
         with ui.element('div').classes('w-full grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4'):
             for product in products:
                 product_card(product, t.category_name(self.store.categories[product.category_id]), t,
-                             on_add=self.on_add)
+                             on_open=self.on_open, on_add=self.on_add)
 
 
-def offers_strip(store: StoreData, t: Translator, *, on_add: Callable[[int], None]) -> None:
+def offers_strip(store: StoreData, t: Translator, *, on_open: Callable[[int], None],
+                 on_add: Callable[[int], None]) -> None:
     offers = [p for p in store.products.values() if p.promotion and p.is_available]
     if not offers:
         return
@@ -96,4 +99,4 @@ def offers_strip(store: StoreData, t: Translator, *, on_add: Callable[[int], Non
         with ui.element('div').classes('w-full grid grid-cols-2 md:grid-cols-4 gap-4'):
             for product in offers:
                 product_card(product, t.category_name(store.categories[product.category_id]), t,
-                             on_add=on_add)
+                             on_open=on_open, on_add=on_add)

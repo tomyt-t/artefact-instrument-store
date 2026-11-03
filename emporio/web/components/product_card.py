@@ -42,10 +42,12 @@ def price_block(product: Product, t: Translator, *, large: bool = False) -> None
             ui.label(t('price.installments', n=n, amount=brl(product.price / n))).classes('text-xs text-muted')
 
 
-def product_card(product: Product, category: str, t: Translator, *, on_add: Callable[[int], None]) -> None:
+def product_card(product: Product, category: str, t: Translator, *, on_open: Callable[[int], None],
+                 on_add: Callable[[int], None]) -> None:
     with ui.card().classes('product-card w-full p-0 gap-0 rounded-2xl overflow-hidden no-shadow border border-[#ece2d4]') as card:
         card.props(f'id=product-{product.id}')
-        with ui.element('div').classes('relative w-full bg-sand cursor-pointer'):
+        with ui.element('div').classes('relative w-full bg-sand cursor-pointer') \
+                .on('click', lambda: on_open(product.id)):
             ui.image(product_image(product.image)).props('ratio=1 fit=contain no-spinner') \
                 .classes('product-photo w-full').style('padding: 14px')
             with ui.row().classes('absolute top-2 left-2 gap-1'):
@@ -57,7 +59,8 @@ def product_card(product: Product, category: str, t: Translator, *, on_add: Call
         with ui.column().classes('w-full p-4 gap-2 grow'):
             ui.label(f'{product.brand} · {category}'.upper()).classes('text-[11px] tracking-wider text-muted')
             ui.label(t.product_name(product)) \
-                .classes('line-clamp-2 font-semibold leading-snug cursor-pointer min-h-[2.6em]')
+                .classes('line-clamp-2 font-semibold leading-snug cursor-pointer min-h-[2.6em]') \
+                .on('click', lambda: on_open(product.id))
             price_block(product, t)
             ui.space()
             button = ui.button(t('card.add'), icon='add_shopping_cart', on_click=lambda: on_add(product.id)) \

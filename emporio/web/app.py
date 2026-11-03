@@ -12,6 +12,7 @@ from ..i18n import DEFAULT_LANGUAGE, Translator
 from . import theme
 from .components.catalog import CatalogView, offers_strip
 from .components.layout import SiteHeader, hero, perks, site_footer
+from .components.product_dialog import ProductDialog
 
 STATIC_DIR = Path(__file__).resolve().parent / 'static'
 
@@ -36,9 +37,11 @@ def index() -> None:
         hero(t, on_browse=lambda: ui.run_javascript(
             'document.getElementById("catalogo")?.scrollIntoView({behavior: "smooth"})'))
         perks(t)
-        offers_strip(store, t, on_add=add_from_click)
-        catalog = CatalogView(store, t, on_add=add_from_click)
+        offers_strip(store, t, on_open=lambda pid: product_dialog.open(pid), on_add=add_from_click)
+        catalog = CatalogView(store, t, on_open=lambda pid: product_dialog.open(pid), on_add=add_from_click)
     site_footer(t)
+
+    product_dialog = ProductDialog(store, t, on_add=add_from_click)
 
 
 def run() -> None:
