@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Customer-service agent for the Empório da Música music store, with a NiceGUI storefront"
 requires-python = ">=3.11"
 dependencies = [
+    "tzdata>=2026.6",
 ]
 
 [dependency-groups]
