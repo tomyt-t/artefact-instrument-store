@@ -2,5 +2,10 @@
   "payment.boleto": "Boleto bancário",
   "payment.credit": "Cartão de crédito em {plan}",
   "payment.debit": "Cartão de débito",
-  "payment.pix": "PIX"
+  "payment.pix": "PIX",
+  "availability.coming_soon": "Em breve",
+  "availability.discontinued": "Fora de linha",
+  "availability.in_stock": "Em estoque",
+  "availability.last_units": "Últimas unidades",
+  "availability.sold_out": "Esgotado"
 }

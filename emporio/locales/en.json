@@ -2,5 +2,10 @@
   "payment.boleto": "Boleto (bank slip)",
   "payment.credit": "Credit card in {plan}",
   "payment.debit": "Debit card",
-  "payment.pix": "PIX"
+  "payment.pix": "PIX",
+  "availability.coming_soon": "Coming soon",
+  "availability.discontinued": "Discontinued",
+  "availability.in_stock": "In stock",
+  "availability.last_units": "Last units",
+  "availability.sold_out": "Sold out"
 }

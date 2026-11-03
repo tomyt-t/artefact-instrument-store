@@ -2,5 +2,10 @@
   "payment.boleto": "Boleto (bordereau bancaire)",
   "payment.credit": "Carte de crédit en {plan}",
   "payment.debit": "Carte de débit",
-  "payment.pix": "PIX"
+  "payment.pix": "PIX",
+  "availability.coming_soon": "Bientôt disponible",
+  "availability.discontinued": "Arrêté",
+  "availability.in_stock": "En stock",
+  "availability.last_units": "Dernières unités",
+  "availability.sold_out": "Épuisé"
 }

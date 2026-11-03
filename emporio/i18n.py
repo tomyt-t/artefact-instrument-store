@@ -81,3 +81,18 @@ class Translator:
 
     def order_note(self, note: str) -> str:
         return self._catalog_text('order_notes', note, note)
+
+
+def translated_words(product, category_id: int) -> str:
+    """The product in the other languages, so the search finds 'guitar' or 'guitare' whatever the page's language."""
+    words = []
+    for language in LANGUAGES:
+        if language != STORE_LANGUAGE:
+            translator = Translator(language)
+            category = _catalog(language)['categories'][str(category_id)]
+            words += [translator.product_name(product), category['name'], category['keywords']]
+            if product.details_verified:  # specs, not the description: 'deep bass' on a drum kit is not a bass
+                words += [translator.spec_value(value) for key, value in product.specs.items() if key != 'electronics']
+                if product.specs.get('strings') in ('steel', 'nylon'):
+                    words.append(_catalog(language)['strings_word'])
+    return ' '.join(words)
