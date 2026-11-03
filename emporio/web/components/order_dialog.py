@@ -1,4 +1,4 @@
-"""Order tracking: a lookup form (order number + e-mail) and the order panel."""
+"""Order tracking: a lookup form (order number + e-mail) and the order panel the agent can also open."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -40,11 +40,16 @@ class OrderDialog:
             email.on('keydown.enter', search)
             ui.button(t('order.search'), icon='search', on_click=search).props('unelevated rounded no-caps').classes('w-full')
 
-    def open(self, order_id: int) -> str | None:
+    def open(self, order_id: int, *, seamless: bool = False) -> str | None:
+        """`seamless` drops the backdrop and focus trap so the chat stays usable (used when the agent opens it)."""
         self.order = self.store.orders.get(order_id)
         if self.order is None:
             return None
         self.content.refresh()
+        if seamless:  # beside the chat (bottom-right) instead of on top of it
+            self.dialog.props('seamless position=left')
+        else:
+            self.dialog.props(remove='seamless position')
         self.dialog.open()
         return self.t('order.opened', id=order_id)
 

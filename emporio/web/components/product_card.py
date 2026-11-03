@@ -43,8 +43,9 @@ def price_block(product: Product, t: Translator, *, large: bool = False) -> None
 
 
 def product_card(product: Product, category: str, t: Translator, *, on_open: Callable[[int], None],
-                 on_add: Callable[[int], None]) -> None:
-    with ui.card().classes('product-card w-full p-0 gap-0 rounded-2xl overflow-hidden no-shadow border border-[#ece2d4]') as card:
+                 on_add: Callable[[int], None], highlighted: bool = False) -> None:
+    with ui.card().classes('product-card w-full p-0 gap-0 rounded-2xl overflow-hidden no-shadow border border-[#ece2d4]') \
+            .classes('agent-pick' if highlighted else '') as card:
         card.props(f'id=product-{product.id}')
         with ui.element('div').classes('relative w-full bg-sand cursor-pointer') \
                 .on('click', lambda: on_open(product.id)):

@@ -24,6 +24,8 @@ body { font-family: 'Inter', system-ui, sans-serif; color: #2b211c; }
 .product-card:hover { transform: translateY(-3px); box-shadow: 0 14px 30px -12px rgba(43, 33, 28, .28); }
 .product-photo img { filter: drop-shadow(0 10px 12px rgba(43, 33, 28, .22)); transition: transform .25s ease; }
 .product-card:hover .product-photo img { transform: scale(1.04); }
+.agent-pick { animation: agent-pick 1.6s ease-out 2; }
+@keyframes agent-pick { 0% { box-shadow: 0 0 0 0 rgba(226, 160, 63, .9); } 100% { box-shadow: 0 0 0 14px rgba(226, 160, 63, 0); } }
 .bump { animation: bump .5s ease; }
 @keyframes bump { 30% { transform: scale(1.35); } 100% { transform: scale(1); } }
 .chat-fab { box-shadow: 0 10px 24px -6px rgba(168, 70, 31, .55); }

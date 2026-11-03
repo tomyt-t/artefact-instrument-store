@@ -26,9 +26,11 @@ RECEIPT_ICONS = {AddToCart: 'add_shopping_cart', RemoveFromCart: 'remove_shoppin
 
 class ChatWidget:
     def __init__(self, router: UIEventRouter, history: MutableSequence[dict], *,
-                 session_id: str, context: Callable[[], dict], agent: Agent, t: Translator) -> None:
+                 session_id: str, context: Callable[[], dict], agent: Agent, t: Translator,
+                 on_reset: Callable[[], None] = lambda: None) -> None:
         self.agent = agent
         self.t = t
+        self.on_reset = on_reset  # what a new conversation must forget besides the messages
         self.router = router
         self.history = history  # [{'role', 'content', 'receipts'}], persisted in app.storage.user
         self.session_id = session_id
@@ -106,6 +108,7 @@ class ChatWidget:
     def reset(self) -> None:
         if self.busy:  # the answer being streamed still has to reach the history
             return
+        self.on_reset()
         self.history.clear()
         self._render_history()
 

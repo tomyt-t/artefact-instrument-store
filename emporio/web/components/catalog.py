@@ -1,10 +1,11 @@
-"""Product catalog with filters."""
+"""Product catalog with filters, plus the 'picked by the assistant' spotlight driven by agent events."""
 from __future__ import annotations
 
 from collections.abc import Callable
 
 from nicegui import ui
 
+from ...agent.events import ShowProducts
 from ...data import Product, StoreData
 from ...i18n import Translator
 from .product_card import product_card
@@ -23,6 +24,7 @@ class CatalogView:
         self.category_id: int | None = None
         self.sort = 'relevance'
         self.only_available = False
+        self.spotlight: ShowProducts | None = None
 
         with ui.column().classes('w-full gap-4').props('id=catalogo'):
             with ui.row().classes('w-full items-end justify-between gap-4'):
@@ -38,8 +40,15 @@ class CatalogView:
             self.chips()
             self.grid()
 
+    def show_selection(self, action: ShowProducts) -> str:
+        self.spotlight = action
+        self.chips.refresh()
+        self.grid.refresh()
+        ui.run_javascript('document.getElementById("catalogo")?.scrollIntoView({behavior: "smooth"})')
+        return self.t('catalog.shown', count=len(action.product_ids), title=action.title)
+
     def set_query(self, query: str) -> None:
-        self._set(query=query or '')
+        self._set(query=query or '', spotlight=None)
 
     def _set(self, **changes) -> None:
         for key, value in changes.items():
@@ -48,6 +57,9 @@ class CatalogView:
         self.grid.refresh()
 
     def _products(self) -> list[Product]:
+        if self.spotlight:
+            # keep the agent's order, it is part of the answer
+            return [self.store.products[pid] for pid in self.spotlight.product_ids if pid in self.store.products]
         products = self.store.search(self.query, self.category_id, only_available=self.only_available)
         match self.sort:
             case 'price_asc': products.sort(key=lambda p: p.price)
@@ -59,6 +71,15 @@ class CatalogView:
     @ui.refreshable_method
     def chips(self) -> None:
         t = self.t
+        if self.spotlight:
+            with ui.row().classes('w-full items-center gap-3 rounded-2xl bg-white border border-[#ece2d4] px-4 py-3'):
+                ui.icon('auto_awesome', color='accent', size='sm')
+                with ui.column().classes('gap-0 grow'):
+                    ui.label(t('catalog.spotlight')).classes('text-xs uppercase tracking-wider text-muted')
+                    ui.label(self.spotlight.title).classes('font-semibold')
+                ui.button(t('catalog.show_all'), icon='close', on_click=lambda: self._set(spotlight=None)) \
+                    .props('flat rounded no-caps color=primary')
+            return
         with ui.row().classes('gap-2'):
             self._chip(t('catalog.all'), None)
             for category in self.store.categories_in_use:
@@ -81,10 +102,11 @@ class CatalogView:
                 ui.icon('search_off', size='3rem')
                 ui.label(t('catalog.empty'))
             return
+        picked = set(self.spotlight.product_ids) if self.spotlight else set()
         with ui.element('div').classes('w-full grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4'):
             for product in products:
                 product_card(product, t.category_name(self.store.categories[product.category_id]), t,
-                             on_open=self.on_open, on_add=self.on_add)
+                             on_open=self.on_open, on_add=self.on_add, highlighted=product.id in picked)
 
 
 def offers_strip(store: StoreData, t: Translator, *, on_open: Callable[[int], None],

@@ -1,4 +1,4 @@
-"""Product details, opened by a click on a card."""
+"""Product details: opened by a click on a card or by the agent (OpenProduct)."""
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -23,11 +23,20 @@ class ProductDialog:
         with ui.dialog() as self.dialog, ui.card().classes('w-full max-w-4xl p-0 rounded-3xl overflow-hidden'):
             self.content()
 
-    def open(self, product_id: int) -> str | None:
+    @property
+    def viewing_product_id(self) -> int | None:
+        return self.product.id if self.product and self.dialog.value else None
+
+    def open(self, product_id: int, *, seamless: bool = False) -> str | None:
+        """`seamless` drops the backdrop and focus trap so the chat stays usable (used when the agent opens it)."""
         self.product = self.store.products.get(product_id)
         if self.product is None:
             return None
         self.content.refresh()
+        if seamless:  # beside the chat (bottom-right) instead of on top of it
+            self.dialog.props('seamless position=left')
+        else:
+            self.dialog.props(remove='seamless position')
         self.dialog.open()
         return self.t('product.opened', name=self.t.product_name(self.product))
 
