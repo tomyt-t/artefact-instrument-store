@@ -1,0 +1,6 @@
+{
+  "payment.boleto": "Boleto (bordereau bancaire)",
+  "payment.credit": "Carte de crédit en {plan}",
+  "payment.debit": "Carte de débit",
+  "payment.pix": "PIX"
+}

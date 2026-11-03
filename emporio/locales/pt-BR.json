@@ -1,0 +1,6 @@
+{
+  "payment.boleto": "Boleto bancário",
+  "payment.credit": "Cartão de crédito em {plan}",
+  "payment.debit": "Cartão de débito",
+  "payment.pix": "PIX"
+}

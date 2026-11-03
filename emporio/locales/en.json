@@ -1,0 +1,6 @@
+{
+  "payment.boleto": "Boleto (bank slip)",
+  "payment.credit": "Credit card in {plan}",
+  "payment.debit": "Debit card",
+  "payment.pix": "PIX"
+}
