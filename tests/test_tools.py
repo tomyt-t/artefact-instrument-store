@@ -1,6 +1,6 @@
 """Agent tools: what the model reads back and which storefront events each call produces."""
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 
@@ -8,7 +8,7 @@ from emporio.agent.base import AgentContext
 from emporio.agent.events import AddToCart, OpenCart, OpenProduct, RemoveFromCart, ShowOrder, ShowProducts
 from emporio.agent.tools import MAX_FAILED_LOOKUPS, MAX_LISTED, ORDER_NOT_FOUND, OrderGuard, Toolbox
 from emporio.cart import Cart
-from emporio.policies import TIMEZONE
+from emporio.policies import HOLIDAYS, TIMEZONE
 
 NOW = datetime(2026, 10, 31, 12, 0, tzinfo=TIMEZONE)  # Saturday, open until 13h; Monday 02/11 is Finados
 ANA = 'anacarol.ferreira@coldmail.com'  # order 8: shipped, 245 days past the estimated delivery
@@ -43,11 +43,12 @@ def test_schemas_are_valid_function_declarations(tools):
     schemas = tools.schemas()
     assert [s['function']['name'] for s in schemas] == [
         'buscar_produtos', 'ver_produto', 'ver_carrinho', 'adicionar_ao_carrinho', 'remover_do_carrinho',
-        'consultar_pedido']
+        'consultar_pedido', 'prazos_troca_devolucao', 'consultar_politicas', 'info_loja']
     for schema in schemas:
         parameters = schema['function']['parameters']
         assert parameters['type'] == 'object'
         assert set(parameters.get('required', [])) <= set(parameters['properties'])
+    assert '4.1 Direito de Arrependimento' in schemas[7]['function']['description']  # the manual index
     json.dumps(schemas)
 
 
@@ -331,6 +332,84 @@ def test_order_lookup_is_blocked_after_repeated_failures(make):
     assert make(session='s2').call('consultar_pedido', {'numero_pedido': 8, 'email': ANA}).events == (ShowOrder(8),)
 
 
+# --- deadlines -----------------------------------------------------------------------------------------------------
+
+def test_deadlines_need_a_verified_order(make):
+    assert 'consultar_pedido' in make().call('prazos_troca_devolucao', {'numero_pedido': 7}).data['erro']
+    assert 'cancelado' in make(verified=(19,)).call('prazos_troca_devolucao', {'numero_pedido': 19}).data['erro']
+
+
+def test_deadlines_of_a_delivered_order_are_over(make):
+    data = make(verified=(7,)).call('prazos_troca_devolucao', {'numero_pedido': 7}).data
+    assert [(p['secao'], p['ultimo_dia'], p['situacao']) for p in data['prazos']] == [
+        ('4.1', '24/02/2026', 'prazo encerrado em 24/02/2026, há 249 dias'),
+        ('4.2', '05/03/2026', 'prazo encerrado em 05/03/2026, há 240 dias'),
+        ('4.3', '24/02/2026', 'prazo encerrado em 24/02/2026, há 249 dias'),
+        ('8.1', '18/05/2026', 'prazo encerrado em 18/05/2026, há 166 dias')]
+    assert 'previsão de entrega' in data['recebimento'] and 'garantia do fabricante' in data['depois_dos_prazos']
+
+
+def test_deadlines_of_an_order_not_delivered_yet(make):
+    data = make(verified=(8,)).call('prazos_troca_devolucao', {'numero_pedido': 8}).data
+    assert [p['ultimo_dia'] for p in data['prazos']] == [None, '17/03/2026', None, None]
+    assert 'ainda não foi entregue' in data['observacao'] and 'depois_dos_prazos' not in data
+
+
+def test_deadlines_from_the_receipt_alone(tools):
+    data = tools.call('prazos_troca_devolucao', {'data_recebimento': '2026-10-29'}).data
+    assert [window['secao'] for window in data['prazos']] == ['4.1', '4.3', '8.1']
+    assert data['prazos'][0]['ultimo_dia'] == '05/11/2026' and 'compra' not in data and '4.2' in data['observacao']
+    assert 'erro' in tools.call('prazos_troca_devolucao', {'data_recebimento': '2026-11-05'}).data
+
+
+def test_deadlines_of_a_purchase_in_the_store(tools):
+    data = tools.call('prazos_troca_devolucao', {'data_compra': '29/10/2026', 'compra_online': False}).data
+    assert [(p['secao'], p['situacao']) for p in data['prazos']] == [
+        ('4.2', 'dentro do prazo, até 28/11/2026 (faltam 28 dias)'),
+        ('4.3', 'dentro do prazo, até 05/11/2026 (faltam 5 dias)'),
+        ('8.1', 'dentro do prazo, até 27/01/2027 (faltam 88 dias)')]  # no right of withdrawal in the store
+    online = tools.call('prazos_troca_devolucao', {'data_compra': '2026-10-24', 'data_recebimento': '2026-10-31'})
+    assert online.data['prazos'][0]['situacao'] == 'dentro do prazo, até 07/11/2026 (faltam 7 dias)'
+    last_day = tools.call('prazos_troca_devolucao', {'data_compra': '2026-10-24', 'data_recebimento': '2026-10-24'})
+    assert [p['situacao'] for p in last_day.data['prazos']][::2] == ['último dia é hoje', 'último dia é hoje']
+    today = tools.call('prazos_troca_devolucao', {'data_compra': '2026-10-31', 'compra_online': False})
+    assert today.data['prazos'][1]['situacao'] == 'dentro do prazo, até 07/11/2026 (faltam 7 dias)'
+    for bad in ({'data_compra': '2026-11-05'}, {'data_compra': '2026-10-24', 'data_recebimento': '2026-10-20'},
+                {'data_compra': 'ontem'}, {}):
+        assert 'erro' in tools.call('prazos_troca_devolucao', bad).data
+
+
+# --- policies and store --------------------------------------------------------------------------------------------
+
+def test_policies_come_with_the_corrections_of_those_sections_only(tools):
+    data = tools.call('consultar_politicas', {'secoes': ['4.1']}).data
+    assert data['secoes'][0]['secao'] == '4.1' and len(data['correcoes']) == 2 and 'compras online' in data['correcoes'][0]
+    assert 'correcoes' not in tools.call('consultar_politicas', {'secoes': ['8.1']}).data
+    assert '(67) 3341-4444' in tools.call('consultar_politicas', {'secoes': ['7']}).data['correcoes'][0]
+    assert 'correcoes' not in tools.call('consultar_politicas', {'secoes': ['7.2']}).data
+    assert [s['secao'] for s in tools.call('consultar_politicas', {'secoes': ['4', '4.1']}).data['secoes']] == [
+        '4', '4.1', '4.2', '4.3', '4.4']
+    assert tools.call('consultar_politicas', {'secoes': '8.1'}).data['secoes'][0]['titulo'] == 'Garantia Legal'
+    assert tools.call('consultar_politicas', {'secoes': ['8.1', '11']}).data['inexistentes'] == ['11']
+    assert 'erro' in tools.call('consultar_politicas', {'secoes': ['11']}).data
+
+
+@pytest.mark.parametrize('now, is_open, status, holiday', [
+    (NOW, True, 'Aberto agora · até 13h', False),
+    (datetime(2026, 10, 31, 14, 0), False, 'Fechado · abre terça às 9h', False),  # naive: Campo Grande time
+    (datetime(2026, 10, 31, 16, 30, tzinfo=UTC), True, 'Aberto agora · até 13h', False),  # 12:30 there
+    (datetime(2026, 11, 2, 10, 0, tzinfo=TIMEZONE), False, 'Fechado · abre amanhã às 9h', True),
+], ids=['saturday', 'saturday afternoon', 'utc', 'finados'])
+def test_store_info_knows_the_time_and_holidays(make, now, is_open, status, holiday):
+    data = make(now=now).call('info_loja', {}).data
+    assert (data['aberta_agora'], data['situacao'], data['feriado_hoje']) == (is_open, status, holiday)
+    assert (data['telefone_e_whatsapp'], data['email']) == ('(67) 3341-4444', 'contato@emporiodamusica.com.br')
+
+
+def test_store_info_gives_the_date_of_the_next_opening(make):
+    assert make(now=NOW).call('info_loja', {}).data['proxima_abertura'] == 'terça, 03/11/2026, às 9h'
+
+
 # --- robustness ----------------------------------------------------------------------------------------------------
 
 def test_malformed_calls_come_back_as_errors(tools):
@@ -339,6 +418,7 @@ def test_malformed_calls_come_back_as_errors(tools):
     assert 'JSON' in tools.call('ver_produto', '[81]').data['erro']
     assert tools.call('ver_produto', '{}').data == {'erro': 'Faltou informar: produto_id.'}
     assert tools.call('ver_produto', '{"produto_id": 81, "extra": 1}').events == (OpenProduct(81),)
+    assert tools.call('info_loja', None).data['aberta_agora'] is True
 
 
 def test_huge_or_deeply_nested_arguments_are_refused_fast(tools):
@@ -379,6 +459,15 @@ def test_every_allowed_number_of_installments_comes_ready(make):
     assert found['parcelas_disponiveis']['5x'] == 'R$ 259,80'
 
 
+def test_the_date_the_customer_gives_counts_even_with_an_order(store, make):
+    tools = make(verified={7}, now=datetime(2026, 3, 2, 10, tzinfo=TIMEZONE))
+    data = tools.call('prazos_troca_devolucao', {'numero_pedido': 7, 'data_recebimento': '2026-02-27'}).data
+    assert 'data que você informou' in data['recebimento'] and 'base' not in data['recebimento']
+    assert any('06/03/2026' in str(item) for item in data['prazos'])
+    wrong = tools.call('prazos_troca_devolucao', {'numero_pedido': 7, 'data_recebimento': '2027-01-01'}).data
+    assert 'Datas impossíveis' in wrong['erro']
+
+
 def test_a_product_not_in_the_catalog_brings_what_is_similar(make):
     data = make().call('buscar_produtos', {'consulta': 'Gibson SG Standard'}).data
     assert data['encontrados'] == 0 and data['parecidos'][0]['nome'].startswith('Gibson')
@@ -414,3 +503,23 @@ def test_a_brand_beyond_the_chosen_category_is_still_found(store, guard):
     assert 'indisponiveis' in sold_out and 'outras_categorias' not in sold_out
     nothing = english.call('buscar_produtos', {'categoria': 'Guitars', 'consulta': 'trompete'}).data
     assert nothing['encontrados'] == 0 and 'outras_categorias' not in nothing
+
+
+def test_store_info_lists_every_holiday_of_the_calendar(make):
+    holidays = make(now=NOW).call('info_loja', {}).data['feriados']
+    assert all(f'{day:02d}/{month:02d}' in holidays for month, day in HOLIDAYS)
+    assert 'Sexta-feira Santa' in holidays and 'Carnaval' in holidays
+
+
+@pytest.mark.parametrize('said, read', [
+    ('28/10', '28/10/2026'), ('1/2', '01/02/2026'), ('31/10', '31/10/2026'),  # today still counts
+    ('01/11', '01/11/2025'),  # later this year: the customer means the last time it happened
+    ('29/10/2024', '29/10/2024'), ('2026-10-29', '29/10/2026'),
+])
+def test_a_date_without_a_year_is_the_last_time_it_happened(tools, said, read):
+    assert tools.call('prazos_troca_devolucao', {'data_recebimento': said}).data['recebimento'] == read
+
+
+@pytest.mark.parametrize('said', ['31/02', '29/02', '32/10', '10/13', '00/00', 'ontem', '31/02/2026'])
+def test_a_date_that_does_not_exist_is_refused(tools, said):
+    assert 'DD/MM' in tools.call('prazos_troca_devolucao', {'data_compra': said}).data['erro']

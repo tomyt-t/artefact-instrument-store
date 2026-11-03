@@ -15,10 +15,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
 
-from .. import policies
+from .. import manual, policies
 from ..cart import Cart
 from ..data import STOPWORDS, Category, Product, StoreData, normalize
-from ..format import brl
+from ..format import br_date, brl
 from ..i18n import LANGUAGES, Translator
 from . import views
 from .base import AgentContext
@@ -42,6 +42,11 @@ NOT_IN_CATALOG = 'Esse produto não está no catálogo. Cite só os produtos que
 ORDER_NOT_FOUND = 'Não encontrei pedido com esse número e e-mail. Confira os dois dados com o cliente.'
 ORDER_BLOCKED = (f'Consulta de pedidos bloqueada para este cliente depois de {MAX_FAILED_LOOKUPS} tentativas sem '
                  f'sucesso. Ele pode falar com a equipe pelo {policies.STORE.phone}.')
+AFTER_DEADLINES = ('Depois desses prazos, o produto pode ainda ter a garantia do fabricante (8.2): a maioria oferece de 6 '
+                   'meses a 2 anos, e o prazo está no certificado de garantia, que o cliente precisa conferir. A loja '
+                   'pode intermediar o contato com o fabricante (4.2).')
+SPECIAL_DATES = ('Em datas especiais (Black Friday, aniversário da loja, Natal) o horário pode ser estendido; a loja '
+                 'avisa com antecedência nas redes sociais e no WhatsApp.')
 
 
 class ToolError(Exception):
@@ -267,7 +272,112 @@ class Toolbox:
         return ToolResult(views.order_view(order, self.store, self.today), (ShowOrder(order.id),),
                           (self.t('suggestion.exchange'), self.t('suggestion.team')))
 
+    def deadlines(self, numero_pedido: int | None = None, data_compra: str = '', data_recebimento: str = '',
+                  compra_online: bool = True) -> ToolResult:
+        if numero_pedido is not None:
+            order_id = _integer(numero_pedido, 'numero_pedido')
+            if order_id not in self.context.verified_orders:
+                raise ToolError('Antes, consulte o pedido com consultar_pedido (número e e-mail do cliente).')
+            order = self.store.orders[order_id]
+            if order.status == 'cancelled':
+                raise ToolError(f'O pedido {order.id} foi cancelado: não há troca nem devolução a fazer.')
+            purchased, online = order.order_date, True  # the store's orders are online purchases
+            received = order.estimated_delivery if order.status == 'delivered' else None
+            data: dict = {'pedido': order.id, 'compra': br_date(purchased)}
+            if data_recebimento:  # the base only has a forecast: the customer's date is what they actually lived
+                received = self._date(data_recebimento, 'data_recebimento')
+                if received > self.today or received < purchased:
+                    raise ToolError('Datas impossíveis: o recebimento vem depois da compra e não pode ser no futuro.')
+                data['recebimento'] = f'{br_date(received)} (data que você informou; a equipe confirma o recebimento)'
+            elif received:
+                data['recebimento'] = f'{br_date(received)} (previsão de entrega; se você recebeu em outro dia, me diga a data)'
+            else:
+                data['observacao'] = ('O pedido ainda não foi entregue. Trate antes da entrega ou do atraso; os prazos '
+                                      'contados do recebimento só começam quando o produto chegar.')
+        elif data_compra or data_recebimento:
+            purchased = self._date(data_compra, 'data_compra') if data_compra else None
+            online = _boolean(compra_online, 'compra_online')
+            received = self._date(data_recebimento, 'data_recebimento') if data_recebimento else (
+                None if online else purchased)  # in the store the customer takes the product home
+            if max(day for day in (purchased, received) if day) > self.today or (
+                    purchased and received and received < purchased):
+                raise ToolError('Datas impossíveis: a compra vem antes do recebimento, e os dois não podem ser no '
+                                'futuro.')
+            data = {'compra': br_date(purchased)} if purchased else {}
+            if received:
+                data['recebimento'] = br_date(received)
+        else:
+            raise ToolError('Informe numero_pedido (já consultado), data_compra ou data_recebimento.')
+        windows = policies.return_windows(purchased or received, received, online=online)
+        if purchased is None:  # the defect exchange counts from the purchase
+            windows = [window for window in windows if window.section != '4.2']
+            data['observacao'] = ('Sem a data da compra, a troca por defeito (4.2) não foi calculada: se o problema for '
+                                  'defeito, peça essa data ao cliente.')
+        data['hoje'] = br_date(self.today)
+        data['prazos'] = views.deadlines_view(windows, self.today)
+        if not any(w.last_day is None or w.is_open(self.today) for w in windows):
+            data['depois_dos_prazos'] = AFTER_DEADLINES
+        return ToolResult(data)
+
+    # --- policies and store --------------------------------------------------------------------------------------
+
+    def read_policies(self, secoes: list[str]) -> ToolResult:
+        numbers = [str(n).strip() for n in (secoes if isinstance(secoes, list) else [secoes])]
+        found, missing = [], []
+        for number in numbers:
+            group = manual.find(number)
+            found += [s for s in group if s not in found]
+            if not group:
+                missing.append(number)
+        if not found:
+            raise ToolError(f'Seção inexistente: {", ".join(missing)}. Use os números do índice.')
+        data: dict = {'secoes': [{'secao': s.number, 'titulo': s.title, 'texto': s.text} for s in found]}
+        if corrections := manual.corrections(found):
+            data['correcoes'] = corrections
+        if missing:
+            data['inexistentes'] = missing
+        return ToolResult(data)
+
+    def store_info(self) -> ToolResult:
+        is_open, status = policies.opening_status(self.now)
+        weekdays, saturday = policies.OPENING_HOURS[0], policies.OPENING_HOURS[5]
+        info = policies.STORE
+        holidays = ', '.join(f'{day:02d}/{month:02d}' for month, day in sorted(policies.HOLIDAYS))
+        data = {
+            'agora': f'{policies.WEEKDAYS[self.now.weekday()]}, {br_date(self.today)}, {self.now:%H:%M}',
+            'aberta_agora': is_open,
+            'situacao': status,
+            'proxima_abertura': views.next_opening(self.now),
+            'feriado_hoje': policies.is_holiday(self.today),
+            'horario': (f'segunda a sexta das {weekdays[0]}h às {weekdays[1]}h, sábado das {saturday[0]}h às '
+                        f'{saturday[1]}h; fechada aos domingos e feriados'),
+            'feriados': f'{holidays} e Sexta-feira Santa; Carnaval e Corpus Christi não fecham a loja',
+            'datas_especiais': SPECIAL_DATES,
+            'endereco': f'{info.street}, {info.city}',
+            'telefone_e_whatsapp': info.phone,
+            'email': info.email,
+        }
+        return ToolResult(data)
+
     # --- argument checks -----------------------------------------------------------------------------------------
+
+    def _date(self, value: object, name: str) -> date:
+        """A date as the customer said it. Without a year it is the most recent one that isn't in the future: the code knows
+        today better than the model does."""
+        text = _text(value, name)
+        if match := re.fullmatch(r'(\d{1,2})/(\d{1,2})', text):
+            for year in (self.today.year, self.today.year - 1):
+                try:
+                    if (day := date(year, int(match[2]), int(match[1]))) <= self.today:
+                        return day
+                except ValueError:
+                    pass
+        for pattern in ('%Y-%m-%d', '%d/%m/%Y'):
+            try:
+                return datetime.strptime(text, pattern).date()
+            except ValueError:
+                pass
+        raise ToolError(f'{name} precisa estar no formato DD/MM ou DD/MM/AAAA, recebi {value!r}.')
 
     def _product(self, value: object) -> Product:
         product_id = _integer(value, 'produto_id')
@@ -326,6 +436,34 @@ class Toolbox:
                  'tente adivinhar. Um pedido já consultado nesta conversa dispensa o e-mail.',
                  _object({'numero_pedido': {'type': 'integer'}, 'email': {'type': 'string'}},
                          required=['numero_pedido']), self.lookup_order),
+            Tool('prazos_troca_devolucao',
+                 'Calcula, com a data de hoje, até quando valem o arrependimento (4.1), a troca por defeito (4.2), '
+                 'a troca por preferência (4.3) e a garantia legal (8.1). Use antes de dizer se o cliente ainda pode '
+                 'trocar ou devolver. Para um pedido, consulte-o antes com consultar_pedido; para uma compra fora '
+                 'da base (por exemplo, na loja física), informe as datas que o cliente souber.',
+                 _object({
+                     'numero_pedido': {'type': 'integer'},
+                     'data_compra': {'type': 'string', 'description': 'DD/MM, se não houver número de pedido. Só '
+                                     'ponha o ano (DD/MM/AAAA) se o cliente disse o ano.'},
+                     'data_recebimento': {'type': 'string', 'description': 'DD/MM, com ou sem número de pedido, sempre que '
+                                          'o cliente disser a data. Só ponha o ano (DD/MM/AAAA) se o cliente disse o ano. '
+                                          'Vazio se ainda não recebeu.'},
+                     'compra_online': {'type': 'boolean', 'description': 'Padrão true. false para compra na loja.'},
+                 }), self.deadlines),
+            Tool('consultar_politicas',
+                 'Lê seções do manual de políticas da loja, junto com as correções que prevalecem sobre ele. '
+                 'Use para regras gerais de pagamento, trocas, devoluções, entregas, promoções, garantia, privacidade '
+                 'e atendimento, e cite a seção na resposta. Preço, PIX, parcelas e frete de um produto vêm de '
+                 'buscar_produtos, ver_produto e ver_carrinho. Um número sem subseção ("4") traz a seção '
+                 f'inteira. Índice:\n{manual.index()}',
+                 _object({'secoes': {'type': 'array', 'items': {'type': 'string'},
+                                     'description': 'Números das seções, ex.: ["4.1", "8"].'}}, required=['secoes']),
+                 self.read_policies),
+            Tool('info_loja',
+                 'Endereço, telefone/WhatsApp, e-mail, horário de funcionamento e se a loja está aberta agora (com '
+                 'feriados), além de quando abre de novo. Use para perguntas sobre a loja física, contato ou horário '
+                 'e quando o cliente quiser falar com a equipe.',
+                 _object({}), self.store_info),
         ]
 
 

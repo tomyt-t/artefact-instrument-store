@@ -5,7 +5,7 @@ repeat values, never calculate them.
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from .. import policies
 from ..cart import Cart
@@ -27,6 +27,13 @@ AVAILABILITY_NOTES = {
     'Fora de linha': 'Não faz mais parte do catálogo.',
     'Em breve': 'Ainda não chegou à loja e não tem data prevista.',
 }
+DEADLINE_RULES = {
+    '4.1': f'{policies.RETURN_WINDOW_DAYS} dias corridos depois do recebimento, só em compras online',
+    '4.2': f'{policies.DEFECT_EXCHANGE_DAYS} dias corridos depois da compra',
+    '4.3': f'{policies.RETURN_WINDOW_DAYS} dias corridos depois do recebimento, se o produto desejado estiver disponível; '
+           'a diferença de valor é cobrada ou reembolsada, e a equipe confirma quem paga o frete',
+    '8.1': f'{policies.LEGAL_WARRANTY_DAYS} dias corridos depois do recebimento',
+}
 QUOTE_WITH_TEAM = f'A cotação é individual, com a equipe pelo {policies.STORE.phone} (5.2).'
 STALE_AFTER_DAYS = 15  # an order waiting longer than this without shipping is treated as a problem
 TREAT_AS_COMPLAINT = (f'Pedimos desculpas pela demora. Para resolver, fale com a equipe pelo {policies.STORE.phone}: o retorno '
@@ -43,6 +50,12 @@ CATEGORY_CHOICES = {
     ('fr', ACOUSTIC_GUITARS): 'Guitares',
 }
 NO_EXTRA_PIX_DISCOUNT = 'Sem desconto adicional no PIX: a promoção não se soma aos 5% (política 6.2).'
+
+
+def next_opening(now: datetime) -> str | None:
+    """Weekday and date together: told only 'terça' and 'feriado segunda', the model wrote 'terça-feira (02/11)'."""
+    opening = policies.next_opening(now)
+    return opening and f'{policies.WEEKDAYS[opening.weekday()]}, {br_date(opening.date())}, às {opening.hour}h'
 
 
 def installments(amount: float) -> str:
@@ -157,4 +170,20 @@ def order_view(order: Order, store: StoreData, today: date) -> dict:
             view['o_que_fazer'] = TREAT_AS_COMPLAINT
     if order.notes:
         view['observacoes'] = order.notes
+    return view
+
+
+def deadlines_view(windows: list[policies.ReturnWindow], today: date) -> list[dict]:
+    view = []
+    for window in windows:
+        if window.last_day is None:
+            status = 'ainda não começou a contar: o produto não foi recebido'
+        elif window.is_open(today):
+            days = (window.last_day - today).days
+            status = ('último dia é hoje' if days == 0
+                      else f'dentro do prazo, até {br_date(window.last_day)} (faltam {days} dias)')
+        else:
+            status = f'prazo encerrado em {br_date(window.last_day)}, há {(today - window.last_day).days} dias'
+        view.append({'secao': window.section, 'direito': window.right, 'regra': DEADLINE_RULES[window.section],
+                     'ultimo_dia': br_date(window.last_day) if window.last_day else None, 'situacao': status})
     return view
