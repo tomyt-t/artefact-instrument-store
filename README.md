@@ -80,7 +80,7 @@ Screenshots from the live site, each from a fresh chat, showing the agent acting
 
 ## Assumptions
 
-- **Language.** The brief and the store's material are in Portuguese, but the recruiting e-mail says "All responses must be in English!". I took that as covering this README, the code comments and the submission. The storefront opens in English and also offers Portuguese and French.
+- **Language.** The brief and the store's material are in Portuguese, but the application form says "All responses must be in English!". I took that as covering this README, the code comments and the submission. The storefront opens in English and also offers Portuguese and French.
 - **"The simplest way possible".** I applied the e-mail's request to the agent: no framework, vector store or database. The storefront goes beyond that on purpose, and the CLI runs the same agent without it.
 - **Deadline and delivery.** The e-mail gives the second business day from October 31, 2026. That was a Saturday and November 2 is a holiday, so I read it as November 4 and worked to November 3 to be safe. The e-mail asks for a form and the brief for a reply with the link, so I did both.
 - **Dates.** The agent uses the real clock in Campo Grande time. The latest order is from March 22, 2026, so open orders show as long delayed.
